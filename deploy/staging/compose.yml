@@ -1,0 +1,25 @@
+# SuperExchange on the staging plane, beside the staging homeserver on the shared `suite-staging`
+# network as `superexchange`: the address the homeserver's registration for this appservice
+# points at (estate provision/309-staging-tuwunel.sh). Settings come from
+# /opt/suite-staging/env/superexchange/superexchange.env, minted on the box.
+name: staging-superexchange
+
+services:
+  exchange:
+    build:
+      context: ../..
+      dockerfile: apps/exchange/Dockerfile
+    image: staging-superexchange:${SUPEREXCHANGE_SHA:-dev}
+    env_file: /opt/suite-staging/env/superexchange/superexchange.env
+    environment:
+      PORT: "8795"
+    ports:
+      - "127.0.0.1:8795:8795"
+    networks:
+      suite-staging:
+        aliases: [superexchange]
+    restart: unless-stopped
+
+networks:
+  suite-staging:
+    external: true
