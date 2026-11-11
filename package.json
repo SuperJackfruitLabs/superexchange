@@ -1,0 +1,22 @@
+{
+  "name": "superexchange",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "fmt": "prettier --write .",
+    "fmt:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings apps deploy",
+    "test": "bun test",
+    "check": "bun run fmt:check && bun run typecheck && bun run lint && bun run test"
+  },
+  "devDependencies": {
+    "@types/bun": "1.2.8",
+    "oxlint": "1.88.0",
+    "prettier": "3.6.2",
+    "typescript": "5.9.2"
+  }
+}
