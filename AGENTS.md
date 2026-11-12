@@ -21,6 +21,8 @@ its scope are `decisions/2026-11-10-superexchange-owns-the-communication-server.
   `src/appservice` the Matrix transport, `src/board-chat` the board work in chat, `src/routes`
   the HTTP surface (relay deliveries, the operator's board API).
 - `deploy/staging/`: the staging deploy, run on the staging host by its forced-command key.
+- `deploy/production/`: the production deploy, run on the production host by its forced-command
+  key from a `v*` tag (`release.yml`).
 
 ## Checks
 
@@ -36,7 +38,8 @@ Never commit secrets or keys.
 
 ## Releases
 
-Versions start at 0.0.1, and only the operator pushes tags. There is no production deploy yet.
+Versions start at 0.0.1, and only the operator pushes tags. A `v*` tag on main deploys
+production (`deploy/production/release.sh`, rolling back on failure).
 
 ## Shared kit
 
