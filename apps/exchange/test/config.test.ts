@@ -37,6 +37,7 @@ describe("loadConfig", () => {
       relayDeliverySecret: "relay-secret-for-tests",
       dataDir: "/data",
       operatorTokenSha256: "ab".repeat(32),
+      plaintextRooms: false,
     });
   });
 
@@ -101,6 +102,52 @@ describe("loadConfig", () => {
     ]);
   });
 
+  test("plaintext rooms are off unless set on, and anything else is refused", () => {
+    expect(loadConfig(FULL).plaintextRooms).toBe(false);
+    const staging = { ...FULL, MATRIX_SERVER_NAME: "staging-matrix.example" };
+    expect(
+      loadConfig({ ...staging, SUPEREXCHANGE_PLAINTEXT_ROOMS: "off" })
+        .plaintextRooms,
+    ).toBe(false);
+    expect(
+      loadConfig({ ...staging, SUPEREXCHANGE_PLAINTEXT_ROOMS: " " })
+        .plaintextRooms,
+    ).toBe(false);
+    expect(
+      loadConfig({ ...staging, SUPEREXCHANGE_PLAINTEXT_ROOMS: "on" })
+        .plaintextRooms,
+    ).toBe(true);
+    for (const bad of ["true", "1", "yes"]) {
+      expect(
+        problems({ ...staging, SUPEREXCHANGE_PLAINTEXT_ROOMS: bad }),
+      ).toEqual(["SUPEREXCHANGE_PLAINTEXT_ROOMS is not on or off"]);
+    }
+  });
+
+  test("plaintext rooms on a server that is not staging stop the service", () => {
+    for (const serverName of [
+      "example",
+      "matrix.example",
+      "matrix-staging-.example",
+      "Staging-matrix.example",
+    ]) {
+      expect(
+        problems({
+          ...FULL,
+          MATRIX_SERVER_NAME: serverName,
+          SUPEREXCHANGE_PLAINTEXT_ROOMS: "on",
+        }),
+      ).toEqual([
+        "SUPEREXCHANGE_PLAINTEXT_ROOMS is on, and is allowed only when MATRIX_SERVER_NAME starts with staging-",
+      ]);
+    }
+    // Off, any server name is fine.
+    expect(
+      loadConfig({ ...FULL, SUPEREXCHANGE_PLAINTEXT_ROOMS: "off" })
+        .plaintextRooms,
+    ).toBe(false);
+  });
+
   test("an error never carries a setting's value", () => {
     const env = {
       ...FULL,
@@ -108,6 +155,8 @@ describe("loadConfig", () => {
       MATRIX_HS_TOKEN: FULL.MATRIX_AS_TOKEN,
       SUPEREXCHANGE_OPERATOR_TOKEN_SHA256: "not-a-hash-value",
       SUPEREXCHANGE_DATA_DIR: "relative/data-dir",
+      MATRIX_SERVER_NAME: "prod-homeserver.example",
+      SUPEREXCHANGE_PLAINTEXT_ROOMS: "on",
     };
     let message = "";
     try {
@@ -116,8 +165,10 @@ describe("loadConfig", () => {
       message = error instanceof Error ? error.message : String(error);
     }
     expect(message).not.toBe("");
-    for (const value of Object.values(env))
-      expect(message).not.toContain(value);
+    // The plaintext switch's "on" is a word of every sentence; every other value is checked.
+    for (const [name, value] of Object.entries(env))
+      if (name !== "SUPEREXCHANGE_PLAINTEXT_ROOMS")
+        expect(message).not.toContain(value);
   });
 });
 
