@@ -1,7 +1,8 @@
 /**
  * The service's own store: one SQLite database (`bun:sqlite`, WAL) in the data directory. It
  * holds what SuperExchange alone knows: the homeserver transactions already applied, the boards
- * an operator has pointed at it, and the gates the event relay delivered for them.
+ * an operator has pointed at it, the gates the event relay delivered for them, each board's room
+ * and who is in it, and which gates have been posted there.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -39,6 +40,29 @@ export const MIGRATIONS: readonly string[] = [
      body TEXT NOT NULL
    );
    CREATE INDEX gate_deliveries_board ON gate_deliveries (board_id);`,
+  `CREATE TABLE board_rooms (
+     board_id TEXT PRIMARY KEY,
+     room_id TEXT NOT NULL UNIQUE,
+     alias TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE TABLE room_members (
+     room_id TEXT NOT NULL,
+     user_id TEXT NOT NULL,
+     membership TEXT NOT NULL,
+     updated_at TEXT NOT NULL,
+     PRIMARY KEY (room_id, user_id)
+   );
+   CREATE TABLE gate_events (
+     gate_id TEXT PRIMARY KEY,
+     board_id TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     card_event_id TEXT,
+     prose_event_id TEXT,
+     claimed_at TEXT NOT NULL,
+     posted_at TEXT
+   );
+   CREATE INDEX gate_events_room ON gate_events (room_id);`,
 ];
 
 export class StoreError extends Error {
@@ -67,6 +91,36 @@ export interface BoardInput {
   invitees: string[];
 }
 
+/** A board's room, as recorded when it was made. */
+export interface BoardRoom {
+  boardId: string;
+  roomId: string;
+  /** The alias's localpart. */
+  alias: string;
+  createdAt: string;
+}
+
+/**
+ * A gate's claim on its room. A row with no `postedAt` is claimed and not yet (fully) posted:
+ * the prose may already have landed (`proseEventId`), the card not.
+ */
+export interface GateEvent {
+  gateId: string;
+  boardId: string;
+  roomId: string;
+  cardEventId: string | null;
+  proseEventId: string | null;
+  claimedAt: string;
+  postedAt: string | null;
+}
+
+/** A delivered gate with no posted event yet. */
+export interface UnpostedGate {
+  gateId: string;
+  boardId: string;
+  body: unknown;
+}
+
 export interface Store {
   /** The schema version the database is at. */
   schemaVersion(): number;
@@ -85,6 +139,38 @@ export interface Store {
   recordGateDelivery(gateId: string, boardId: string, body: unknown): boolean;
   /** The recorded body of a gate, or null. */
   gateDelivery(gateId: string): { boardId: string; body: unknown } | null;
+  /**
+   * Delivered gates not yet posted, oldest first: never claimed, or claimed and unfinished. Only
+   * `boardId`'s when it is given.
+   */
+  unpostedGates(boardId?: string): UnpostedGate[];
+
+  /**
+   * Record a board's room. The first record wins: returns the room on record afterwards, which is
+   * this one unless another was recorded first.
+   */
+  recordBoardRoom(boardId: string, roomId: string, alias: string): BoardRoom;
+  boardRoom(boardId: string): BoardRoom | null;
+  /** The board room a Matrix room is, or null. */
+  boardRoomByRoomId(roomId: string): BoardRoom | null;
+
+  /** Record a user's membership of a room (`join`, `invite`, `leave`, `ban`, `knock`). */
+  recordMembership(roomId: string, userId: string, membership: string): void;
+  /** The users recorded with a membership of `membership` in a room. */
+  membersOf(roomId: string, membership: string): string[];
+  /** A user's recorded membership of a room, or null. */
+  membershipOf(roomId: string, userId: string): string | null;
+
+  /**
+   * Claim a gate's post into a room. True when this call made the claim; false when the gate
+   * was already claimed (posted or not).
+   */
+  claimGateEvent(gateId: string, boardId: string, roomId: string): boolean;
+  gateEvent(gateId: string): GateEvent | null;
+  /** Record the prose message's event id, once it has landed. */
+  recordGateProse(gateId: string, proseEventId: string): void;
+  /** Record the card's event id, and that the gate is posted. */
+  recordGatePosted(gateId: string, cardEventId: string): void;
   close(): void;
 }
 
@@ -144,6 +230,16 @@ export function openStore(
       .query<BoardRow, [string]>("SELECT * FROM boards WHERE board_id = ?")
       .get(boardId);
     return row ? toBoard(row) : null;
+  };
+
+  const boardRoom = (boardId: string): BoardRoom | null => {
+    const row = db
+      .query<
+        BoardRoomRow,
+        [string]
+      >("SELECT * FROM board_rooms WHERE board_id = ?")
+      .get(boardId);
+    return row ? toBoardRoom(row) : null;
   };
 
   return {
@@ -217,9 +313,140 @@ export function openStore(
         : null;
     },
 
+    unpostedGates(boardId) {
+      const rows = db
+        .query<
+          { gate_id: string; board_id: string; body: string },
+          [string | null, string | null]
+        >(
+          `SELECT d.gate_id, d.board_id, d.body FROM gate_deliveries d
+           LEFT JOIN gate_events e ON e.gate_id = d.gate_id
+           WHERE e.posted_at IS NULL AND (?1 IS NULL OR d.board_id = ?2)
+           ORDER BY d.received_at, d.gate_id`,
+        )
+        .all(boardId ?? null, boardId ?? null);
+      return rows.map((row) => ({
+        gateId: row.gate_id,
+        boardId: row.board_id,
+        body: JSON.parse(row.body) as unknown,
+      }));
+    },
+
+    recordBoardRoom(boardId, roomId, alias) {
+      db.query(
+        "INSERT INTO board_rooms (board_id, room_id, alias, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (board_id) DO NOTHING",
+      ).run(boardId, roomId, alias, stamp());
+      return boardRoom(boardId) as BoardRoom;
+    },
+
+    boardRoom,
+
+    boardRoomByRoomId(roomId) {
+      const row = db
+        .query<
+          BoardRoomRow,
+          [string]
+        >("SELECT * FROM board_rooms WHERE room_id = ?")
+        .get(roomId);
+      return row ? toBoardRoom(row) : null;
+    },
+
+    recordMembership(roomId, userId, membership) {
+      db.query(
+        `INSERT INTO room_members (room_id, user_id, membership, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (room_id, user_id) DO UPDATE SET
+           membership = excluded.membership,
+           updated_at = excluded.updated_at`,
+      ).run(roomId, userId, membership, stamp());
+    },
+
+    membersOf(roomId, membership) {
+      return db
+        .query<{ user_id: string }, [string, string]>(
+          "SELECT user_id FROM room_members WHERE room_id = ? AND membership = ? ORDER BY user_id",
+        )
+        .all(roomId, membership)
+        .map((row) => row.user_id);
+    },
+
+    membershipOf(roomId, userId) {
+      const row = db
+        .query<
+          { membership: string },
+          [string, string]
+        >("SELECT membership FROM room_members WHERE room_id = ? AND user_id = ?")
+        .get(roomId, userId);
+      return row?.membership ?? null;
+    },
+
+    claimGateEvent(gateId, boardId, roomId) {
+      const result = db
+        .query(
+          "INSERT INTO gate_events (gate_id, board_id, room_id, claimed_at) VALUES (?, ?, ?, ?) ON CONFLICT (gate_id) DO NOTHING",
+        )
+        .run(gateId, boardId, roomId, stamp());
+      return result.changes === 1;
+    },
+
+    gateEvent(gateId) {
+      const row = db
+        .query<
+          GateEventRow,
+          [string]
+        >("SELECT * FROM gate_events WHERE gate_id = ?")
+        .get(gateId);
+      return row
+        ? {
+            gateId: row.gate_id,
+            boardId: row.board_id,
+            roomId: row.room_id,
+            cardEventId: row.card_event_id,
+            proseEventId: row.prose_event_id,
+            claimedAt: row.claimed_at,
+            postedAt: row.posted_at,
+          }
+        : null;
+    },
+
+    recordGateProse(gateId, proseEventId) {
+      db.query(
+        "UPDATE gate_events SET prose_event_id = ? WHERE gate_id = ?",
+      ).run(proseEventId, gateId);
+    },
+
+    recordGatePosted(gateId, cardEventId) {
+      db.query(
+        "UPDATE gate_events SET card_event_id = ?, posted_at = ? WHERE gate_id = ?",
+      ).run(cardEventId, stamp(), gateId);
+    },
+
     close: () => db.close(),
   };
 }
+
+interface BoardRoomRow {
+  board_id: string;
+  room_id: string;
+  alias: string;
+  created_at: string;
+}
+
+interface GateEventRow {
+  gate_id: string;
+  board_id: string;
+  room_id: string;
+  card_event_id: string | null;
+  prose_event_id: string | null;
+  claimed_at: string;
+  posted_at: string | null;
+}
+
+const toBoardRoom = (row: BoardRoomRow): BoardRoom => ({
+  boardId: row.board_id,
+  roomId: row.room_id,
+  alias: row.alias,
+  createdAt: row.created_at,
+});
 
 function userVersion(db: Database): number {
   const row = db

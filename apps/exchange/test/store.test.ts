@@ -157,4 +157,74 @@ describe("the store", () => {
     });
     expect(store.gateDelivery("g2")).toBeNull();
   });
+
+  test("a database at schema 1 is brought to 2 and keeps its rows", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 1));
+    db.exec(
+      "INSERT INTO gate_deliveries VALUES ('g1', 'brd_a', '2026-11-12T10:00:00.000Z', '{}')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(store.schemaVersion()).toBe(2);
+    expect(store.gateDelivery("g1")).toEqual({ boardId: "brd_a", body: {} });
+    expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g1"]);
+  });
+
+  test("a board's room is recorded once: the first record wins", () => {
+    const { store } = fresh();
+    expect(store.boardRoom("brd_a")).toBeNull();
+    const first = store.recordBoardRoom("brd_a", "!r1:x", "alias_a");
+    expect(first.roomId).toBe("!r1:x");
+    expect(store.recordBoardRoom("brd_a", "!r2:x", "alias_a").roomId).toBe(
+      "!r1:x",
+    );
+    expect(store.boardRoomByRoomId("!r1:x")?.boardId).toBe("brd_a");
+    expect(store.boardRoomByRoomId("!r2:x")).toBeNull();
+  });
+
+  test("a membership is recorded, then replaced by the next one", () => {
+    const { store } = fresh();
+    store.recordMembership("!r:x", "@ana:x", "invite");
+    store.recordMembership("!r:x", "@bo:x", "join");
+    expect(store.membersOf("!r:x", "join")).toEqual(["@bo:x"]);
+    store.recordMembership("!r:x", "@ana:x", "join");
+    expect(store.membersOf("!r:x", "join")).toEqual(["@ana:x", "@bo:x"]);
+    store.recordMembership("!r:x", "@bo:x", "leave");
+    expect(store.membersOf("!r:x", "join")).toEqual(["@ana:x"]);
+    expect(store.membershipOf("!r:x", "@bo:x")).toBe("leave");
+    expect(store.membershipOf("!r:x", "@cy:x")).toBeNull();
+  });
+
+  test("a gate is claimed once, and is unposted until its card is recorded", () => {
+    const { store } = fresh();
+    store.recordGateDelivery("g1", "brd_a", { n: 1 });
+    store.recordGateDelivery("g2", "brd_b", { n: 2 });
+    expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g1", "g2"]);
+    expect(store.unpostedGates("brd_b").map((g) => g.gateId)).toEqual(["g2"]);
+
+    expect(store.claimGateEvent("g1", "brd_a", "!r:x")).toBe(true);
+    expect(store.claimGateEvent("g1", "brd_a", "!r:x")).toBe(false);
+    // Claimed is not posted.
+    expect(store.unpostedGates("brd_a").map((g) => g.gateId)).toEqual(["g1"]);
+
+    store.recordGateProse("g1", "$prose");
+    expect(store.gateEvent("g1")).toMatchObject({
+      proseEventId: "$prose",
+      cardEventId: null,
+      postedAt: null,
+    });
+    store.recordGatePosted("g1", "$card");
+    expect(store.gateEvent("g1")).toMatchObject({
+      roomId: "!r:x",
+      proseEventId: "$prose",
+      cardEventId: "$card",
+    });
+    expect(store.gateEvent("g1")?.postedAt).not.toBeNull();
+    expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g2"]);
+    expect(store.gateEvent("g9")).toBeNull();
+  });
 });
