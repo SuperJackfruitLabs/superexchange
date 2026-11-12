@@ -5,9 +5,12 @@
  *
  * - `boards.ts`: what an opted-in board is, and the checks on its settings.
  * - `gates.ts`: the relay's `gate.pending` deliveries, kept for opted-in boards.
+ * - `rooms.ts`: each board's room, made once, its people invited, and who has joined it.
+ * - `gate-card.ts`: posting a kept gate into its room once a person has joined, exactly once.
  *
- * Nothing is posted to Matrix yet: board rooms and their cards move here from the AgentPod hub's
- * `services/board-chat` in a later step.
+ * Ported from the AgentPod hub's `services/board-chat`. Nothing is encrypted yet: rooms are made
+ * and posted into only while `SUPEREXCHANGE_PLAINTEXT_ROOMS` is on, which only a staging
+ * homeserver allows.
  */
 export {
   BOARD_ID,
@@ -18,3 +21,17 @@ export {
   type BoardSettings,
 } from "./boards.ts";
 export { GATE_PENDING_V1, intakeGate, type GateIntake } from "./gates.ts";
+export {
+  createBoardChat,
+  gateTxnId,
+  type BoardChat,
+  type BoardChatDeps,
+  type PostOutcome,
+} from "./gate-card.ts";
+export {
+  BOARD_ROOM_NAMES,
+  NAMESPACE_USER_PREFIX,
+  createBoardRooms,
+  type BoardRooms,
+  type BoardRoomsDeps,
+} from "./rooms.ts";

@@ -15,10 +15,20 @@ Matrix client. SuperExchange itself needs a SuperPipeline, an event relay and a 
 
 ## Status
 
-The transport. The service keeps its own store, answers the homeserver's appservice
-transactions, takes `gate.pending` from the event relay for the boards an operator has opted in,
-and records them. Nothing is posted to Matrix yet: board rooms, gate cards and their sweeps move
-here from the AgentPod hub in later steps.
+Board rooms and the gate card. The service keeps its own store, answers the homeserver's
+appservice transactions, and takes `gate.pending` from the event relay for the boards an operator
+has opted in. For each such gate it makes the board's room once (speaker
+`@superexchange_board`, shown as "superpipeline"; alias `#superexchange_board_<board id>`),
+invites the board's people, holds the gate until one of them has joined, then posts it exactly
+once: the gate.v2 prose message and the gate card, both built by treaty. Gates not yet posted are
+tried again at boot and when a person joins. Answers, questions, follow-ups, waiting cards and
+the sweeps move here from the AgentPod hub in later steps.
+
+**Nothing is encrypted yet.** Board rooms are end-to-end encrypted, and SuperExchange cannot
+encrypt until a later step. Until then it makes and posts into no room at all, unless
+`SUPEREXCHANGE_PLAINTEXT_ROOMS=on`, which makes plaintext rooms and is refused on any homeserver
+whose server name does not start with `staging-`. It is a staging-only switch, and it is removed
+when encryption arrives.
 
 | Route                                                | Who calls it   | What it does                                      |
 | ---------------------------------------------------- | -------------- | ------------------------------------------------- |
@@ -53,6 +63,7 @@ curl http://127.0.0.1:8080/healthz
 | `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256` | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards` |
 | `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset             |
 | `PORT`                                | Where it listens; 8080 when unset                                           |
+| `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                           |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 

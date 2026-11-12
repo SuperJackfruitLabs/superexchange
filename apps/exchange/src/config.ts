@@ -38,7 +38,20 @@ export interface Config {
   dataDir: string;
   /** The SHA-256 of the operator's bearer token, 64 lowercase hex digits. */
   operatorTokenSha256: string;
+  /**
+   * Whether board rooms may be made and posted into without end-to-end encryption
+   * (`SUPEREXCHANGE_PLAINTEXT_ROOMS`). Staging only, and only until SuperExchange encrypts: off,
+   * nothing is posted at all.
+   */
+  plaintextRooms: boolean;
 }
+
+/**
+ * The prefix a homeserver's server name must have for `SUPEREXCHANGE_PLAINTEXT_ROOMS` to be on.
+ * Board rooms are encrypted (charter); plaintext is a staging allowance and never a production
+ * one.
+ */
+export const PLAINTEXT_SERVER_PREFIX = "staging-";
 
 export class ConfigError extends Error {
   constructor(readonly problems: string[]) {
@@ -88,6 +101,27 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     problems.push("SUPEREXCHANGE_DATA_DIR is not an absolute path");
   }
 
+  let plaintextRooms = false;
+  const rawPlaintext = env.SUPEREXCHANGE_PLAINTEXT_ROOMS?.trim().toLowerCase();
+  if (rawPlaintext === "on") plaintextRooms = true;
+  else if (
+    rawPlaintext !== undefined &&
+    rawPlaintext !== "" &&
+    rawPlaintext !== "off"
+  ) {
+    problems.push("SUPEREXCHANGE_PLAINTEXT_ROOMS is not on or off");
+  }
+  // Fail closed: plaintext rooms on anything but a staging homeserver stop the service.
+  if (
+    plaintextRooms &&
+    serverName !== "" &&
+    !serverName.startsWith(PLAINTEXT_SERVER_PREFIX)
+  ) {
+    problems.push(
+      `SUPEREXCHANGE_PLAINTEXT_ROOMS is on, and is allowed only when MATRIX_SERVER_NAME starts with ${PLAINTEXT_SERVER_PREFIX}`,
+    );
+  }
+
   let port = DEFAULT_PORT;
   const rawPort = env.PORT?.trim();
   if (rawPort) {
@@ -107,6 +141,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     relayDeliverySecret,
     dataDir,
     operatorTokenSha256,
+    plaintextRooms,
   };
 }
 
