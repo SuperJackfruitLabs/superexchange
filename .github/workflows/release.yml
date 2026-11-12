@@ -207,11 +207,13 @@ jobs:
           range=${prev:+$prev..}$TAG
           git log --no-merges --format='%s' "$range" > commit-log.txt
           git diff --stat "${prev:-$(git rev-list --max-parents=0 HEAD | tail -1)}" "$TAG" | tail -40 > diff-stat.txt
+      # A first release has no previous tag: git-cliff then takes every commit up to HEAD, which
+      # is the tag. It cannot read a bare tag as a range.
       - name: Release notes — grouped commits
         uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
         with:
           config: .github/release/cliff.toml
-          args: ${{ env.PREV && format('{0}..{1}', env.PREV, env.TAG) || env.TAG }} --strip header
+          args: ${{ env.PREV && format('{0}..{1}', env.PREV, env.TAG) || '' }} --strip header
         env:
           OUTPUT: grouped.md
       - name: Release notes — summary (never blocks the release)
