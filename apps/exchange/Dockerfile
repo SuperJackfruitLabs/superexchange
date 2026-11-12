@@ -5,6 +5,9 @@ COPY package.json bun.lock ./
 COPY apps/exchange/package.json apps/exchange/
 RUN bun install --frozen-lockfile --production
 COPY apps/exchange/src apps/exchange/src
+# The store's directory (SUPEREXCHANGE_DATA_DIR, /data by default), owned by the user the service
+# runs as. A named volume mounted here takes this ownership when it is first created.
+RUN mkdir -p /data && chown bun:bun /data
 USER bun
 ENV PORT=8795
 EXPOSE 8795
