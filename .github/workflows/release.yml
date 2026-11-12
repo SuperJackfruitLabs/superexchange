@@ -1,0 +1,59 @@
+name: release
+
+# A `vX.Y.Z` tag deploys SuperExchange to production: the production host runs that tag's
+# deploy/production/release.sh through its forced-command key (`superexchange v<x.y.z>`), which
+# builds the tag's image, recreates the service, checks it and rolls back to the release before
+# on failure. GitHub runs releases; forge runs CI and review. On forge this workflow does nothing.
+#
+# Off until the host side exists: the deploy runs only when the repository variable PROD_HOST is
+# set, beside the PROD_SSH_KEY and PROD_KNOWN_HOSTS secrets.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.server_url == 'https://github.com'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The tag is on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run check
+
+  deploy:
+    needs: [check]
+    if: github.server_url == 'https://github.com' && vars.PROD_HOST != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Deploy this tag to production
+        env:
+          KEY: ${{ secrets.PROD_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+          HOST: ${{ vars.PROD_HOST }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/prod && chmod 600 ~/.ssh/prod
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/prod "root@$HOST" superexchange "$GITHUB_REF_NAME"

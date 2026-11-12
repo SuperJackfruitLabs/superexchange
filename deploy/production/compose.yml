@@ -1,0 +1,46 @@
+# SuperExchange in production, beside the production homeserver and the event relay. Settings
+# come from /etc/superexchange/superexchange.env, minted on the host by the operator's
+# provisioning. Deployed by release.sh on a tag.
+#
+# Its store and the speaker's crypto store live on the host, in /var/lib/superexchange, mounted at
+# /data (the image's default SUPEREXCHANGE_DATA_DIR) and owned by the image's `bun` user, so the
+# host's backup can snapshot them. release.sh makes the directory with that owner.
+#
+# Networks:
+#   - the relay's network (treaty's production compose, `treaty_relay`), as `superexchange`: the
+#     address the relay delivers gate.pending to. treaty's relay must be deployed first.
+#   - published on loopback only, 127.0.0.1:8795: the homeserver runs in the host's network and
+#     calls this appservice there (its registration's url), and the operator's board API is
+#     reached there.
+#   - the homeserver listens on the host's loopback, which a container cannot reach, so it is
+#     reached at its public name through the host's reverse proxy: that name resolves to the host
+#     gateway (`MATRIX_HOMESERVER_URL` names it; `SUPEREXCHANGE_HOMESERVER_HOST` is the name).
+name: superexchange
+
+services:
+  exchange:
+    build:
+      context: ../..
+      dockerfile: apps/exchange/Dockerfile
+    image: superexchange:${SUPEREXCHANGE_TAG:?SUPEREXCHANGE_TAG is the release tag}
+    env_file: /etc/superexchange/superexchange.env
+    environment:
+      PORT: "8795"
+      SUPEREXCHANGE_DATA_DIR: /data
+      # Board rooms are encrypted in production; the service refuses plaintext here anyway.
+      SUPEREXCHANGE_PLAINTEXT_ROOMS: "off"
+    extra_hosts:
+      - "${SUPEREXCHANGE_HOMESERVER_HOST:?SUPEREXCHANGE_HOMESERVER_HOST is the homeserver's public name}:host-gateway"
+    ports:
+      - "127.0.0.1:8795:8795"
+    volumes:
+      - /var/lib/superexchange:/data
+    networks:
+      relay:
+        aliases: [superexchange]
+    restart: unless-stopped
+
+networks:
+  relay:
+    name: treaty_relay
+    external: true
