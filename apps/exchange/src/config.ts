@@ -22,6 +22,18 @@ export const REQUIRED = [
    * token itself is never given to the service, so a leaked environment does not leak it.
    */
   "SUPEREXCHANGE_OPERATOR_TOKEN_SHA256",
+  /** Where the organization plane (Accounts) answers: who a Matrix sender is, and assertions. */
+  "ORG_PLANE_URL",
+  /**
+   * This service's own credential at the organization plane, `svc_<20 hex>:<secret>`. Sent only
+   * to the plane, as a bearer; never logged.
+   */
+  "ORG_PLANE_SERVICE_CREDENTIAL",
+  /**
+   * Where SuperPipeline's API answers. A person's answer to a gate is resolved there, with an
+   * assertion whose audience is this same URL.
+   */
+  "SUPERPIPELINE_URL",
 ] as const;
 
 /** Where the store keeps its database when `SUPEREXCHANGE_DATA_DIR` is unset. */
@@ -44,7 +56,22 @@ export interface Config {
    * nothing is posted at all.
    */
   plaintextRooms: boolean;
+  /** The organization plane's URL. */
+  orgPlaneUrl: string;
+  /** This service's credential at the organization plane. */
+  orgPlaneCredential: ServiceCredential;
+  /** SuperPipeline's API URL, and the audience of every assertion asked for it. */
+  superpipelineUrl: string;
 }
+
+/** A service principal's credential: its id and its secret. */
+export interface ServiceCredential {
+  id: string;
+  secret: string;
+}
+
+/** The shape of a service credential: `svc_` and 20 hex digits, a colon, then the secret. */
+const SERVICE_CREDENTIAL = /^(svc_[0-9a-f]{20}):(\S+)$/;
 
 /**
  * The prefix a homeserver's server name must have for `SUPEREXCHANGE_PLAINTEXT_ROOMS` to be on.
@@ -80,8 +107,24 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     "SUPEREXCHANGE_OPERATOR_TOKEN_SHA256",
   ).toLowerCase();
 
-  if (homeserverUrl !== "" && !isHttpUrl(homeserverUrl)) {
-    problems.push("MATRIX_HOMESERVER_URL is not an http(s) URL");
+  const orgPlaneUrl = read("ORG_PLANE_URL");
+  const rawCredential = read("ORG_PLANE_SERVICE_CREDENTIAL");
+  const superpipelineUrl = read("SUPERPIPELINE_URL");
+
+  for (const [name, value] of [
+    ["MATRIX_HOMESERVER_URL", homeserverUrl],
+    ["ORG_PLANE_URL", orgPlaneUrl],
+    ["SUPERPIPELINE_URL", superpipelineUrl],
+  ] as const) {
+    if (value !== "" && !isHttpUrl(value)) {
+      problems.push(`${name} is not an http(s) URL`);
+    }
+  }
+  const credential = SERVICE_CREDENTIAL.exec(rawCredential);
+  if (rawCredential !== "" && credential === null) {
+    problems.push(
+      "ORG_PLANE_SERVICE_CREDENTIAL is not svc_<20 hex digits>:<secret>",
+    );
   }
   if (asToken !== "" && asToken === hsToken) {
     problems.push("MATRIX_AS_TOKEN and MATRIX_HS_TOKEN are the same");
@@ -142,6 +185,12 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     dataDir,
     operatorTokenSha256,
     plaintextRooms,
+    orgPlaneUrl,
+    orgPlaneCredential: {
+      id: credential?.[1] ?? "",
+      secret: credential?.[2] ?? "",
+    },
+    superpipelineUrl,
   };
 }
 
