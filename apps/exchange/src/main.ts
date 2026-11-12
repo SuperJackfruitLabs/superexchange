@@ -1,7 +1,8 @@
 /**
  * SuperExchange: the suite's communication server. Reads its settings, opens its store, builds
  * the speaker's encryption (its device and keys), wires board chat to the transport (gate cards,
- * questions, follow-ups and waiting cards out, people's answers to them back), then listens,
+ * questions, follow-ups and waiting cards out, the board's notices about them, people's answers,
+ * pull-backs and check overrides back), then listens,
  * gives back any answer a stopped run left unfinished, queues every card delivered but not yet
  * posted, tries again every encrypted event still waiting for its key, and starts the gate,
  * question, follow-up and waiting-card sweeps (once now, then every
@@ -23,18 +24,24 @@ import {
   createAttentionAnswers,
   createBoardChat,
   createBoardRooms,
+  createCheckOverrides,
+  createEscalationRecipients,
   createFollowupAnswers,
+  createPullBacks,
   createGateAnswers,
   createQuestionAnswers,
   createRoomSender,
   createServiceTokens,
   createSuperpipelineReads,
   describe,
+  overrideCheckAtSuperpipeline,
+  pullBackAtSuperpipeline,
   resolveGateAtSuperpipeline,
   startAttentionSweep,
   startFollowupSweep,
   startGateSweep,
   startQuestionSweep,
+  startSweeper,
 } from "./board-chat/index.ts";
 import { loadConfig } from "./config.ts";
 import { SERVICE, createHandler } from "./routes/index.ts";
@@ -133,6 +140,37 @@ const attention = createAttentionAnswers({
     }),
   log,
 });
+const pullBacks = createPullBacks({
+  store,
+  client: sender,
+  speaker: rooms.speaker,
+  accounts,
+  pullBack: (input) =>
+    pullBackAtSuperpipeline(input, { baseUrl: config.superpipelineUrl, mint }),
+  log,
+});
+const overrides = createCheckOverrides({
+  store,
+  client: sender,
+  speaker: rooms.speaker,
+  accounts,
+  override: (input) =>
+    overrideCheckAtSuperpipeline(input, {
+      baseUrl: config.superpipelineUrl,
+      mint,
+    }),
+  log,
+});
+// This service's own token, for reading only: SuperPipeline checks `aud` against its URL. One
+// holder for the sweeps, the notices and the approval-request rule.
+const serviceTokens = createServiceTokens({
+  accounts,
+  audience: config.superpipelineUrl,
+});
+const reads = createSuperpipelineReads({
+  baseUrl: config.superpipelineUrl,
+  tokens: serviceTokens,
+});
 const boardChat = createBoardChat({
   store,
   sender,
@@ -142,17 +180,19 @@ const boardChat = createBoardChat({
   questions,
   followups,
   attention,
+  pullBacks,
+  overrides,
+  notices: {
+    invite: (roomId, userId) => client.invite(rooms.speaker, roomId, userId),
+    recipients: createEscalationRecipients({
+      tokens: serviceTokens,
+      accounts,
+      log,
+    }),
+    labelFor: (principalId) => accounts.principalLabel(principalId),
+    reads,
+  },
   log,
-});
-// This service's own token, for reading only: SuperPipeline checks `aud` against its URL. One
-// holder for both sweeps and the approval-request rule.
-const serviceTokens = createServiceTokens({
-  accounts,
-  audience: config.superpipelineUrl,
-});
-const reads = createSuperpipelineReads({
-  baseUrl: config.superpipelineUrl,
-  tokens: serviceTokens,
 });
 const approvalRequestAllowed = createApprovalScope({
   tokens: serviceTokens,
@@ -188,6 +228,7 @@ const server = Bun.serve({
     onQuestionAccepted: boardChat.questionAccepted,
     onFollowupAccepted: boardChat.followupAccepted,
     onAttentionAccepted: boardChat.attentionAccepted,
+    onNoticeAccepted: boardChat.noticeAccepted,
     approvalRequestAllowed,
     log,
   }),
@@ -231,7 +272,21 @@ const attentionSweep = startAttentionSweep(
   { intervalMs: config.sweepSeconds * 1000 },
 );
 
+// Notices not yet posted (a send that failed) and joins still owed their re-posts: nothing
+// redelivers them, so they are tried again on the sweep's interval. Reads no board.
+const noticeRetry = startSweeper(
+  async () => {
+    boardChat.retryNotices();
+    await boardChat.idle();
+    return { boards: 0, failedBoards: 0 };
+  },
+  (error) =>
+    log(`board-chat: notices could not be retried (${describe(error)})`),
+  { intervalMs: config.sweepSeconds * 1000 },
+);
+
 async function shutdown() {
+  noticeRetry.stop();
   sweep.stop();
   questionSweep.stop();
   followupSweep.stop();
