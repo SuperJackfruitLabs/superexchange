@@ -154,6 +154,7 @@ describe("the store", () => {
     expect(store.gateDelivery("g1")).toEqual({
       boardId: "brd_a",
       body: { n: 1 },
+      settledAt: null,
     });
     expect(store.gateDelivery("g2")).toBeNull();
   });
@@ -170,7 +171,11 @@ describe("the store", () => {
     const store = openStore(dir);
     cleanups.push(() => store.close());
     expect(store.schemaVersion()).toBe(MIGRATIONS.length);
-    expect(store.gateDelivery("g1")).toEqual({ boardId: "brd_a", body: {} });
+    expect(store.gateDelivery("g1")).toEqual({
+      boardId: "brd_a",
+      body: {},
+      settledAt: null,
+    });
     expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g1"]);
   });
 
@@ -348,7 +353,7 @@ describe("migration 4: encryption", () => {
     db.close();
     const store = openStore(dir);
     cleanups.push(() => store.close());
-    expect(store.schemaVersion()).toBe(4);
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
     expect(store.boardRoom("brd_a")).toMatchObject({
       roomId: "!r:x",
       encrypted: false,
@@ -392,5 +397,66 @@ describe("migration 4: encryption", () => {
     again.parkPendingDecrypt("$c", "!r:x", {}, 2);
     again.parkPendingDecrypt("$d", "!r:x", {}, 2);
     expect(again.pendingDecrypts().map((r) => r.eventId)).toEqual(["$c", "$d"]);
+  });
+});
+
+describe("migration 5: gates settled by the sweep", () => {
+  test("a gate and a delivery recorded before it read as not settled", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 4));
+    db.exec("INSERT INTO gate_deliveries VALUES ('g1', 'brd_a', 't0', '{}')");
+    db.exec(
+      "INSERT INTO gate_events (gate_id, board_id, room_id, card_event_id, claimed_at, posted_at) VALUES ('g1', 'brd_a', '!r:x', '$card', 't0', 't1')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
+    expect(store.gateDelivery("g1")?.settledAt).toBeNull();
+    expect(store.gateEvent("g1")).toMatchObject({
+      settledAt: null,
+      settledDecision: null,
+    });
+  });
+
+  test("a settled delivery is never offered as unposted", () => {
+    const { store } = fresh();
+    store.recordGateDelivery("g1", "brd_a", {});
+    store.recordGateDelivery("g2", "brd_a", {});
+    expect(store.settleGateDelivery("g1")).toBe(true);
+    expect(store.settleGateDelivery("g1")).toBe(false);
+    expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g2"]);
+    expect(store.unpostedGates("brd_a").map((g) => g.gateId)).toEqual(["g2"]);
+  });
+
+  test("the sweep claims a posted gate's receipt once, and never after the answer path's", () => {
+    const { store } = fresh();
+    for (const id of ["g1", "g2", "g3"]) {
+      store.claimGateEvent(id, "brd_a", "!r:x");
+    }
+    store.recordGatePosted("g1", "$c1");
+    store.recordGatePosted("g2", "$c2");
+    // g3 is claimed and not posted: nothing is claimed for it.
+    expect(store.settleGateEvent("g3", "approve")).toBe(false);
+    expect(
+      store.postedGatesAwaitingOutcome("brd_a").map((g) => g.gateId),
+    ).toEqual(["g1", "g2"]);
+
+    expect(store.settleGateEvent("g1", "reject")).toBe(true);
+    expect(store.settleGateEvent("g1", "approve")).toBe(false);
+    expect(store.gateEvent("g1")).toMatchObject({
+      settledDecision: "reject",
+      outcomeClaimedAt: expect.any(String),
+      outcomePostedAt: expect.any(String),
+    });
+
+    // An answer's receipt first: the sweep claims nothing after it.
+    expect(store.claimGateOutcome("g2")).toBe(true);
+    expect(store.claimGateReceipt("g2")).toBe(true);
+    expect(store.settleGateEvent("g2", "approve")).toBe(false);
+    expect(store.gateEvent("g2")?.settledAt).toBeNull();
+    expect(store.postedGatesAwaitingOutcome("brd_a")).toEqual([]);
   });
 });

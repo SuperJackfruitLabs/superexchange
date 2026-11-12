@@ -4,7 +4,8 @@
  * an operator has pointed at it, the gates the event relay delivered for them, each board's room
  * and who is in it (and whether it is end-to-end encrypted), which gates have been posted there
  * with what they offered, whether a person's answer to each has acted and its receipt been
- * posted, the speaker's encryption device, and encrypted events still waiting for their key.
+ * posted, which gates the board says were decided elsewhere and settled here, the speaker's
+ * encryption device, and encrypted events still waiting for their key.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -88,6 +89,13 @@ export const MIGRATIONS: readonly string[] = [
      first_seen_at TEXT NOT NULL
    );
    CREATE INDEX pending_decrypts_seen ON pending_decrypts (first_seen_at);`,
+  // The sweep: a gate the board says was decided elsewhere. A posted gate's receipt is claimed
+  // with the outcome columns of migration 3, so the answer path and the sweep share one claim;
+  // these record that the sweep made it and with what. A delivery settled before it was ever
+  // posted is never posted.
+  `ALTER TABLE gate_events ADD COLUMN settled_at TEXT;
+   ALTER TABLE gate_events ADD COLUMN settled_decision TEXT;
+   ALTER TABLE gate_deliveries ADD COLUMN settled_at TEXT;`,
 ];
 
 export class StoreError extends Error {
@@ -193,6 +201,10 @@ export interface GateEvent {
   outcomeClaimedAt: string | null;
   /** Set once the receipt is claimed for posting: a gate gets one receipt. */
   outcomePostedAt: string | null;
+  /** Set when the sweep claimed the receipt for a gate the board says was decided elsewhere. */
+  settledAt: string | null;
+  /** The decision the board gave for it then. */
+  settledDecision: string | null;
 }
 
 /** A delivered gate with no posted event yet. */
@@ -218,13 +230,20 @@ export interface Store {
   listBoards(): Board[];
   /** Record a delivered gate. True when new, false when this gate id was already recorded. */
   recordGateDelivery(gateId: string, boardId: string, body: unknown): boolean;
-  /** The recorded body of a gate, or null. */
-  gateDelivery(gateId: string): { boardId: string; body: unknown } | null;
+  /** The recorded body of a gate, and when it was settled (null while it is not), or null. */
+  gateDelivery(
+    gateId: string,
+  ): { boardId: string; body: unknown; settledAt: string | null } | null;
   /**
-   * Delivered gates not yet posted, oldest first: never claimed, or claimed and unfinished. Only
-   * `boardId`'s when it is given.
+   * Delivered gates not yet posted and not settled, oldest first: never claimed, or claimed and
+   * unfinished. Only `boardId`'s when it is given.
    */
   unpostedGates(boardId?: string): UnpostedGate[];
+  /**
+   * Mark a delivered gate settled: the board says it was decided, so it is never posted after
+   * this. True when this call settled it.
+   */
+  settleGateDelivery(gateId: string): boolean;
 
   /**
    * Record a board's room, and whether it is encrypted. The first record wins: returns the room
@@ -271,6 +290,16 @@ export interface Store {
   releaseGateOutcome(gateId: string): void;
   /** Claim the gate's receipt before it is sent. True once per gate. */
   claimGateReceipt(gateId: string): boolean;
+  /**
+   * The sweep's claim on a posted gate's receipt, for a gate the board says was decided
+   * elsewhere: true once per gate, and false once any receipt is claimed (the answer path's
+   * included) or the gate is not posted. It takes the outcome too, so a later answer in chat is
+   * told it was already decided. Called only between answers (board chat's queue), so an
+   * outcome claim still held then is one the board refused as not pending, and is settled here.
+   */
+  settleGateEvent(gateId: string, decision: string): boolean;
+  /** A board's posted gates whose receipt is not claimed, oldest first. */
+  postedGatesAwaitingOutcome(boardId: string): GateEvent[];
   /**
    * Give back every outcome claim whose receipt was never claimed: at boot, nothing is carrying
    * an answer, so such a claim was left by a run that stopped mid-answer. Answers how many.
@@ -437,13 +466,27 @@ export function openStore(
     gateDelivery(gateId) {
       const row = db
         .query<
-          { board_id: string; body: string },
+          { board_id: string; body: string; settled_at: string | null },
           [string]
-        >("SELECT board_id, body FROM gate_deliveries WHERE gate_id = ?")
+        >("SELECT board_id, body, settled_at FROM gate_deliveries WHERE gate_id = ?")
         .get(gateId);
       return row
-        ? { boardId: row.board_id, body: JSON.parse(row.body) as unknown }
+        ? {
+            boardId: row.board_id,
+            body: JSON.parse(row.body) as unknown,
+            settledAt: row.settled_at,
+          }
         : null;
+    },
+
+    settleGateDelivery(gateId) {
+      return (
+        db
+          .query(
+            "UPDATE gate_deliveries SET settled_at = ? WHERE gate_id = ? AND settled_at IS NULL",
+          )
+          .run(stamp(), gateId).changes === 1
+      );
     },
 
     unpostedGates(boardId) {
@@ -454,7 +497,8 @@ export function openStore(
         >(
           `SELECT d.gate_id, d.board_id, d.body FROM gate_deliveries d
            LEFT JOIN gate_events e ON e.gate_id = d.gate_id
-           WHERE e.posted_at IS NULL AND (?1 IS NULL OR d.board_id = ?2)
+           WHERE e.posted_at IS NULL AND d.settled_at IS NULL
+             AND (?1 IS NULL OR d.board_id = ?2)
            ORDER BY d.received_at, d.gate_id`,
         )
         .all(boardId ?? null, boardId ?? null);
@@ -584,6 +628,33 @@ export function openStore(
       return result.changes === 1;
     },
 
+    settleGateEvent(gateId, decision) {
+      const at = stamp();
+      return (
+        db
+          .query(
+            `UPDATE gate_events SET
+               outcome_claimed_at = COALESCE(outcome_claimed_at, ?1),
+               outcome_posted_at = ?1,
+               settled_at = ?1,
+               settled_decision = ?2
+             WHERE gate_id = ?3 AND posted_at IS NOT NULL AND outcome_posted_at IS NULL`,
+          )
+          .run(at, decision, gateId).changes === 1
+      );
+    },
+
+    postedGatesAwaitingOutcome(boardId) {
+      return db
+        .query<GateEventRow, [string]>(
+          `SELECT * FROM gate_events
+           WHERE board_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL
+           ORDER BY posted_at, gate_id`,
+        )
+        .all(boardId)
+        .map(toGateEvent);
+    },
+
     releaseUnfinishedOutcomes() {
       return db
         .query(
@@ -693,6 +764,8 @@ interface GateEventRow {
   quorum: string | null;
   outcome_claimed_at: string | null;
   outcome_posted_at: string | null;
+  settled_at: string | null;
+  settled_decision: string | null;
 }
 
 const toGateEvent = (row: GateEventRow): GateEvent => ({
@@ -724,6 +797,8 @@ const toGateEvent = (row: GateEventRow): GateEvent => ({
         },
   outcomeClaimedAt: row.outcome_claimed_at,
   outcomePostedAt: row.outcome_posted_at,
+  settledAt: row.settled_at,
+  settledDecision: row.settled_decision,
 });
 
 const toBoardRoom = (row: BoardRoomRow): BoardRoom => ({
