@@ -33,7 +33,9 @@
  * the same gate; a settled gate is never posted. A gate held for a join is logged once.
  *
  * The way in: an encrypted event in a board room, from a person, is decrypted before anything
- * reads it (the hub's `asPlaintext`), then read like any other: a gate answer is carried. One
+ * reads it (the hub's `asPlaintext`), then read like any other: a gate answer, a question answer
+ * or a typed reply to a question is carried (questions: `question-card.ts`, `question-answer.ts`,
+ * sharing this queue). One
  * whose key has not arrived yet waits, still encrypted, in the store (`pending_decrypts`; the
  * hub's `pending-decrypts.ts`): the homeserver has been told the transaction was applied and
  * never sends it again, so an event held in memory would be lost by any restart. It is tried
@@ -62,6 +64,16 @@ import {
 } from "../appservice/index.ts";
 import type { BoardRoom, GateOffer, Store } from "../store/index.ts";
 import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
+import type {
+  QuestionAnswerOutcome,
+  QuestionAnswers,
+} from "./question-answer.ts";
+import {
+  postQuestion,
+  settleQuestion,
+  type QuestionPostOutcome,
+  type QuestionSettleOutcome,
+} from "./question-card.ts";
 import {
   settleGate,
   type GateDecided,
@@ -156,6 +168,13 @@ export interface BoardChatDeps {
     | "claimPendingDecrypt"
     | "settleGateEvent"
     | "settleGateDelivery"
+    | "questionDelivery"
+    | "questionEvent"
+    | "claimQuestionEvent"
+    | "recordQuestionPosted"
+    | "unpostedQuestions"
+    | "settleQuestionDelivery"
+    | "settleQuestionEvent"
   >;
   /** Speaks in board rooms, encrypted where the room is (`room-sender.ts`). */
   sender: RoomSender;
@@ -164,6 +183,8 @@ export interface BoardChatDeps {
   crypto: RoomCrypto | null;
   /** People's answers to the gates posted here (`gate-answer.ts`); absent, none is read. */
   answers?: GateAnswers;
+  /** People's answers to the questions posted here (`question-answer.ts`); absent, none is read. */
+  questions?: QuestionAnswers;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -193,6 +214,14 @@ export interface BoardChat {
    * at boot. Settles when the try is done (answers it found are queued, not awaited).
    */
   retryPending(): Promise<void>;
+  /** Post one question, queued behind every post and answer before it. */
+  postQuestion(elicitationId: string): Promise<QuestionPostOutcome>;
+  /** A question the relay accepted: queue its post and return at once. */
+  questionAccepted(elicitationId: string): void;
+  /** Close a question the board no longer waits on, queued like a settle. */
+  settleQuestion(elicitationId: string): Promise<QuestionSettleOutcome>;
+  /** Carry one question answer (question.answer.v2 or a typed reply), queued. */
+  answerQuestion(event: MatrixEvent): Promise<QuestionAnswerOutcome | null>;
   /** Settles when every queued post has run. */
   idle(): Promise<void>;
 }
@@ -201,8 +230,27 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   const { store, sender, rooms, log } = deps;
   const now = deps.now ?? (() => new Date());
   const refusedBoards = new Set<string>();
-  /** Gates whose hold has been logged: the sweep offers a held gate again every pass. */
+  /** Gates and questions whose hold has been logged: the sweeps offer them again every pass. */
   const heldLogged = new Set<string>();
+
+  /** Why a board's room may not be spoken in, logged once per board and reason; null when it may. */
+  function refusalFor(
+    boardId: string,
+    room: Pick<BoardRoom, "encrypted">,
+  ): RoomRefusal | null {
+    const reason = sender.refusal(room);
+    if (reason === null) return null;
+    const key = `${boardId}\u0000${reason}`;
+    if (!refusedBoards.has(key)) {
+      refusedBoards.add(key);
+      log(
+        reason === "plaintext room"
+          ? `board-chat: ${boardId}'s room was made without encryption and is left as it is: nothing is posted into it while SUPEREXCHANGE_PLAINTEXT_ROOMS is off`
+          : `board-chat: ${boardId}'s room is encrypted and the speaker has no keys (SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set): nothing is posted into it`,
+      );
+    }
+    return reason;
+  }
   let queue: Promise<unknown> = Promise.resolve();
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -232,18 +280,8 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
 
     /** Null when the room may be spoken in; else the refusal, logged once per board and reason. */
     const refuse = (room: Pick<BoardRoom, "encrypted">): PostOutcome | null => {
-      const reason = sender.refusal(room);
-      if (reason === null) return null;
-      const key = `${board.boardId}\u0000${reason}`;
-      if (!refusedBoards.has(key)) {
-        refusedBoards.add(key);
-        log(
-          reason === "plaintext room"
-            ? `board-chat: ${board.boardId}'s room was made without encryption and is left as it is: nothing is posted into it while SUPEREXCHANGE_PLAINTEXT_ROOMS is off`
-            : `board-chat: ${board.boardId}'s room is encrypted and the speaker has no keys (SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set): nothing is posted into it`,
-        );
-      }
-      return { status: "refused", reason };
+      const reason = refusalFor(board.boardId, room);
+      return reason === null ? null : { status: "refused", reason };
     };
 
     const known = claimed
@@ -344,13 +382,68 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
         return null;
       },
     );
+  const questions = deps.questions;
+  const questionDeps = {
+    store,
+    sender,
+    rooms,
+    refuse: refusalFor,
+    held(elicitationId: string, boardId: string) {
+      const key = `question\u0000${elicitationId}`;
+      if (heldLogged.has(key)) return;
+      heldLogged.add(key);
+      log(
+        `board-chat: question ${JSON.stringify(elicitationId)} held until a person joins the room of ${boardId}`,
+      );
+    },
+    log,
+  };
+  const postQ = (elicitationId: string) =>
+    enqueue(() => postQuestion(questionDeps, elicitationId));
+  /** A question answer, carried in the posts' queue; which way in is decided by the caller. */
+  const answerQuestion = (event: MatrixEvent, typed = false) =>
+    enqueue(async () =>
+      questions
+        ? typed
+          ? questions.handleTyped(event)
+          : questions.handle(event)
+        : null,
+    ).catch((error: unknown) => {
+      log(
+        `board-chat: a question answer could not be carried (${describe(error)})`,
+      );
+      return null;
+    });
+
   const postAll = (boardId?: string) => {
     for (const gate of store.unpostedGates(boardId)) void post(gate.gateId);
+    for (const q of store.unpostedQuestions(boardId))
+      void postQ(q.elicitationId);
   };
+
+  /**
+   * What a person's message is read as, before anything else reads it: a gate answer, a
+   * question.answer.v2, or a typed reply to the question open in its room. True when it was one.
+   */
+  function routeAnswer(event: MatrixEvent): boolean {
+    if (answers?.isAnswer(event)) {
+      void answer(event);
+      return true;
+    }
+    if (questions?.isAnswer(event)) {
+      void answerQuestion(event);
+      return true;
+    }
+    if (questions?.isTypedReply(event)) {
+      void answerQuestion(event, true);
+      return true;
+    }
+    return false;
+  }
 
   /** What a decrypted event is read as: an answer is carried; nothing else is read yet. */
   function read(event: MatrixEvent): void {
-    if (answers?.isAnswer(event)) void answer(event);
+    routeAnswer(event);
   }
 
   /**
@@ -446,6 +539,16 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     settle,
     gateAccepted: (gateId) => void post(gateId),
     answer,
+    postQuestion: postQ,
+    questionAccepted: (elicitationId) => void postQ(elicitationId),
+    settleQuestion: (elicitationId) =>
+      enqueue(() =>
+        settleQuestion(
+          { store, sender, speaker: rooms.speaker, log },
+          elicitationId,
+        ),
+      ),
+    answerQuestion: (event) => answerQuestion(event),
     retryPending,
     resume: () => {
       answers?.resume();
@@ -469,11 +572,8 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
           if (room !== null) void inOrder(() => inbound(event, room));
           continue;
         }
-        // A decision, before anything else: it answers the board, and nothing else may read it.
-        if (answers?.isAnswer(event)) {
-          void answer(event);
-          continue;
-        }
+        // An answer, before anything else: it answers the board, and nothing else may read it.
+        if (routeAnswer(event)) continue;
         const member = membershipOf(event);
         if (member === null) continue;
         const room = store.boardRoomByRoomId(member.roomId);

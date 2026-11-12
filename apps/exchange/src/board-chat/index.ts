@@ -16,6 +16,15 @@
  *   elsewhere.
  * - `gate-sweep.ts`: asking each board what it still waits on: gates the relay missed are posted,
  *   gates decided elsewhere settled.
+ * - `questions.ts`: the relay's `elicitation.pending` deliveries (an agent's question, or a broker
+ *   approval request), kept for opted-in boards; an approval request only for a board in this
+ *   service's own workspace.
+ * - `question-card.ts`: posting a kept question into its room once a person has joined, exactly
+ *   once; and closing it when the board no longer waits on it.
+ * - `question-answer.ts`: a person's answer to a question (question.answer.v2, or a typed reply),
+ *   carried to SuperPipeline as that person, and its receipt, once.
+ * - `question-sweep.ts`: asking each board which questions it still waits on.
+ * - `sweeper.ts`: running a sweep on its interval, backing off while every board fails.
  * - `accounts.ts`: the organization plane: who a sender is, the assertion that carries them, and
  *   this service's own token for reading boards.
  * - `superpipeline.ts`: resolving a gate at SuperPipeline with that assertion, and reading a
@@ -59,6 +68,38 @@ export {
   type SettleOutcome,
 } from "./gate-receipt.ts";
 export {
+  ELICITATION_PENDING_V1,
+  createApprovalScope,
+  intakeQuestion,
+  type ApprovalRequestAllowed,
+  type QuestionIntake,
+} from "./questions.ts";
+export {
+  QUESTION_CLOSED_TEXT,
+  questionOffer,
+  questionTxnId,
+  type QuestionPostOutcome,
+  type QuestionSettleOutcome,
+} from "./question-card.ts";
+export {
+  ALREADY_SETTLED_TEXT,
+  APPROVAL_UNBOUND_TEXT,
+  TYPED_APPROVAL_REFUSED_TEXT,
+  createQuestionAnswers,
+  matchReply,
+  unmatchedText,
+  type QuestionAnswerOutcome,
+  type QuestionAnswers,
+  type QuestionAnswersDeps,
+} from "./question-answer.ts";
+export {
+  startQuestionSweep,
+  sweepQuestions,
+  type QuestionSweepDeps,
+  type QuestionSweepResult,
+  type QuestionSweeper,
+} from "./question-sweep.ts";
+export {
   SWEEP_MAX_BACKOFF,
   startGateSweep,
   sweepGates,
@@ -79,9 +120,11 @@ export {
 } from "./accounts.ts";
 export {
   SuperpipelineError,
+  answerQuestionAtSuperpipeline,
   createSuperpipelineReads,
   resolveGateAtSuperpipeline,
   type BoardGate,
+  type QuestionAnswerInput,
   type ResolveInput,
   type ResolveResult,
   type SuperpipelineReads,
