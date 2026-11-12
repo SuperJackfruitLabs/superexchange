@@ -48,6 +48,7 @@ import type {
   MatrixEvent,
 } from "../appservice/index.ts";
 import type { GateOffer, Store } from "../store/index.ts";
+import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
 import { describe, type BoardRooms } from "./rooms.ts";
 
 /** The event type of the prose message. */
@@ -129,6 +130,8 @@ export interface BoardChatDeps {
   rooms: BoardRooms;
   /** `SUPEREXCHANGE_PLAINTEXT_ROOMS`: off, nothing is made or posted. */
   plaintextRooms: boolean;
+  /** People's answers to the gates posted here (`gate-answer.ts`); absent, none is read. */
+  answers?: GateAnswers;
   log: (line: string) => void;
 }
 
@@ -139,8 +142,14 @@ export interface BoardChat {
   gateAccepted(gateId: string): void;
   /** Every delivered gate not yet posted: queued at boot. */
   resume(): void;
-  /** The homeserver's events: memberships of board rooms kept, and a person's join posts the held gates. */
+  /**
+   * The homeserver's events: a gate answer is queued to be carried to the board, before anything
+   * else reads the event; memberships of board rooms are kept, and a person's join posts the held
+   * gates.
+   */
   onEvents: EventsHandler;
+  /** Carry one answer, queued behind every post and answer before it. */
+  answer(event: MatrixEvent): Promise<AnswerOutcome | null>;
   /** Settles when every queued post has run. */
   idle(): Promise<void>;
 }
@@ -256,6 +265,17 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   }
 
   const post = (gateId: string) => enqueue(() => postOnce(gateId));
+  const answers = deps.answers;
+  // Answers share the posts' queue: an answer to a gate whose post is still running waits for it.
+  const answer = (event: MatrixEvent) =>
+    enqueue(async () => (answers ? answers.handle(event) : null)).catch(
+      (error: unknown) => {
+        log(
+          `board-chat: a gate answer could not be carried (${describe(error)})`,
+        );
+        return null;
+      },
+    );
   const postAll = (boardId?: string) => {
     for (const gate of store.unpostedGates(boardId)) void post(gate.gateId);
   };
@@ -263,12 +283,21 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   return {
     post,
     gateAccepted: (gateId) => void post(gateId),
-    resume: () => postAll(),
+    answer,
+    resume: () => {
+      answers?.resume();
+      postAll();
+    },
     idle: () => queue.then(() => undefined),
 
     onEvents(_txnId, events) {
       const woken = new Set<string>();
       for (const event of events) {
+        // A decision, before anything else: it answers the board, and nothing else may read it.
+        if (answers?.isAnswer(event)) {
+          void answer(event);
+          continue;
+        }
         const member = membershipOf(event);
         if (member === null) continue;
         const room = store.boardRoomByRoomId(member.roomId);
