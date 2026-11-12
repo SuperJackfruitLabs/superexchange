@@ -1,17 +1,74 @@
 /**
- * The service's HTTP surface. Today only the health check; the homeserver's transaction route and
- * the event relay's delivery route arrive with the code that answers them.
+ * The service's HTTP surface, one dispatcher over:
+ *
+ * - `GET /healthz`: the health check;
+ * - `/_matrix/app/v1/…`: the homeserver's transactions and queries (the appservice transport);
+ * - `POST /v1/relay/events`: the event relay's signed deliveries (`relay.ts`);
+ * - `/v1/boards…`: the operator's board opt-in API (`boards.ts`).
+ *
+ * Anything else is 404.
  */
+import {
+  APPSERVICE_PREFIX,
+  createAppserviceHandler,
+  type EventsHandler,
+} from "../appservice/index.ts";
+import type { Config } from "../config.ts";
+import type { Store } from "../store/index.ts";
+import { BOARDS_PATH, createBoardsHandler } from "./boards.ts";
+import { RELAY_EVENTS_PATH, createRelayHandler } from "./relay.ts";
 
 export const SERVICE = "superexchange";
 
-export function handle(request: Request): Response {
-  const { pathname } = new URL(request.url);
-  if (
-    pathname === "/healthz" &&
-    (request.method === "GET" || request.method === "HEAD")
-  ) {
-    return Response.json({ ok: true, service: SERVICE });
-  }
-  return Response.json({ error: "not found" }, { status: 404 });
+export interface HandlerDeps {
+  config: Pick<
+    Config,
+    "hsToken" | "relayDeliverySecret" | "operatorTokenSha256"
+  >;
+  store: Store;
+  onEvents: EventsHandler;
+  log?: (line: string) => void;
+  /** Test seam for the relay signature's clock. */
+  nowMs?: () => number;
 }
+
+export function createHandler(deps: HandlerDeps) {
+  const log = deps.log ?? console.log;
+  const appservice = createAppserviceHandler({
+    hsToken: deps.config.hsToken,
+    store: deps.store,
+    onEvents: deps.onEvents,
+    log,
+  });
+  const relay = createRelayHandler({
+    secret: deps.config.relayDeliverySecret,
+    store: deps.store,
+    log,
+    ...(deps.nowMs ? { nowMs: deps.nowMs } : {}),
+  });
+  const boards = createBoardsHandler({
+    operatorTokenSha256: deps.config.operatorTokenSha256,
+    store: deps.store,
+    log,
+  });
+
+  return async (request: Request): Promise<Response> => {
+    const { pathname } = new URL(request.url);
+    if (pathname === "/healthz") {
+      if (request.method === "GET" || request.method === "HEAD") {
+        return Response.json({ ok: true, service: SERVICE });
+      }
+      return notFound();
+    }
+    if (pathname.startsWith(APPSERVICE_PREFIX)) return appservice(request);
+    if (pathname === RELAY_EVENTS_PATH) {
+      return request.method === "POST" ? relay(request) : notFound();
+    }
+    if (pathname === BOARDS_PATH || pathname.startsWith(`${BOARDS_PATH}/`)) {
+      return boards(request);
+    }
+    return notFound();
+  };
+}
+
+const notFound = () => Response.json({ error: "not found" }, { status: 404 });

@@ -8,12 +8,14 @@ import { join, posix, relative, sep } from "node:path";
  * its own layer or point down this list, never up: the transport knows no board, board chat
  * knows no route, and only `main` wires them together.
  *
- * The AgentPod hub's `services/board-chat` moves into `board-chat` in a later step; this keeps it
+ * `store` sits beside config at the bottom: it knows tables, and nothing above it may be reached
+ * from it. The AgentPod hub's `services/board-chat` moves into `board-chat` in a later step; this keeps it
  * from reaching back into the routes that will call it. A new top-level folder must be placed in
  * this list before anything can live in it.
  */
 export const LAYERS = [
   "config",
+  "store",
   "appservice",
   "board-chat",
   "routes",
@@ -99,22 +101,24 @@ describe("architecture", () => {
         "appservice/index.ts": 'import { handle } from "../routes/index.ts";',
         "board-chat/gates.ts": 'export { x } from "../routes/index.ts";',
         "routes/index.ts": 'const m = await import("../main.ts");',
+        "store/index.ts": 'import { x } from "../appservice/index.ts";',
       }),
     ).toEqual([
       "appservice/index.ts (appservice) imports ../routes/index.ts (routes), a higher layer",
       "board-chat/gates.ts (board-chat) imports ../routes/index.ts (routes), a higher layer",
       "routes/index.ts (routes) imports ../main.ts (main), a higher layer",
+      "store/index.ts (store) imports ../appservice/index.ts (appservice), a higher layer",
     ]);
   });
 
   test("a file outside the layers, or an import out of src/, is refused", () => {
     expect(
       violations({
-        "store/rooms.ts": "",
+        "rooms/index.ts": "",
         "routes/index.ts": 'import x from "../../test/helpers.ts";',
       }),
     ).toEqual([
-      "store/rooms.ts is in no layer",
+      "rooms/index.ts is in no layer",
       "routes/index.ts imports ../../test/helpers.ts, outside src/",
     ]);
   });

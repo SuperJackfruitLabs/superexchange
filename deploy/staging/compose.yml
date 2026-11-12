@@ -1,7 +1,8 @@
 # SuperExchange on the staging plane, beside the staging homeserver on the shared `suite-staging`
 # network as `superexchange`: the address the homeserver's registration for this appservice
 # points at (estate provision/309-staging-tuwunel.sh). Settings come from
-# /opt/suite-staging/env/superexchange/superexchange.env, minted on the box.
+# /opt/suite-staging/env/superexchange/superexchange.env, minted on the box. The store lives in
+# the named volume `exchange-data`, mounted at /data (the image's default SUPEREXCHANGE_DATA_DIR).
 name: staging-superexchange
 
 services:
@@ -15,10 +16,15 @@ services:
       PORT: "8795"
     ports:
       - "127.0.0.1:8795:8795"
+    volumes:
+      - exchange-data:/data
     networks:
       suite-staging:
         aliases: [superexchange]
     restart: unless-stopped
+
+volumes:
+  exchange-data:
 
 networks:
   suite-staging:

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { ConfigError, REQUIRED, loadConfig } from "../src/config.ts";
+import {
+  ConfigError,
+  REQUIRED,
+  loadConfig,
+  secretMatches,
+  tokenMatchesSha256,
+} from "../src/config.ts";
 
 const FULL = {
   MATRIX_HOMESERVER_URL: "https://matrix.example",
@@ -7,6 +13,7 @@ const FULL = {
   MATRIX_AS_TOKEN: "as-token-for-tests",
   MATRIX_HS_TOKEN: "hs-token-for-tests",
   TREATY_RELAY_DELIVERY_SECRET: "relay-secret-for-tests",
+  SUPEREXCHANGE_OPERATOR_TOKEN_SHA256: "ab".repeat(32),
 };
 
 function problems(env: Record<string, string | undefined>): string[] {
@@ -28,7 +35,38 @@ describe("loadConfig", () => {
       asToken: "as-token-for-tests",
       hsToken: "hs-token-for-tests",
       relayDeliverySecret: "relay-secret-for-tests",
+      dataDir: "/data",
+      operatorTokenSha256: "ab".repeat(32),
     });
+  });
+
+  test("takes a data directory, and refuses one that is not absolute", () => {
+    expect(
+      loadConfig({ ...FULL, SUPEREXCHANGE_DATA_DIR: "/var/lib/exchange" })
+        .dataDir,
+    ).toBe("/var/lib/exchange");
+    expect(loadConfig({ ...FULL, SUPEREXCHANGE_DATA_DIR: " " }).dataDir).toBe(
+      "/data",
+    );
+    expect(problems({ ...FULL, SUPEREXCHANGE_DATA_DIR: "data" })).toEqual([
+      "SUPEREXCHANGE_DATA_DIR is not an absolute path",
+    ]);
+  });
+
+  test("the operator token's hash is 64 hex digits, read in lowercase", () => {
+    expect(
+      loadConfig({
+        ...FULL,
+        SUPEREXCHANGE_OPERATOR_TOKEN_SHA256: "AB".repeat(32),
+      }).operatorTokenSha256,
+    ).toBe("ab".repeat(32));
+    for (const bad of ["ab".repeat(31), "ab".repeat(33), "zz".repeat(32)]) {
+      expect(
+        problems({ ...FULL, SUPEREXCHANGE_OPERATOR_TOKEN_SHA256: bad }),
+      ).toEqual([
+        "SUPEREXCHANGE_OPERATOR_TOKEN_SHA256 is not 64 hex digits (a SHA-256)",
+      ]);
+    }
   });
 
   test("names every missing setting at once", () => {
@@ -68,6 +106,8 @@ describe("loadConfig", () => {
       ...FULL,
       MATRIX_HOMESERVER_URL: "not a url",
       MATRIX_HS_TOKEN: FULL.MATRIX_AS_TOKEN,
+      SUPEREXCHANGE_OPERATOR_TOKEN_SHA256: "not-a-hash-value",
+      SUPEREXCHANGE_DATA_DIR: "relative/data-dir",
     };
     let message = "";
     try {
@@ -78,5 +118,24 @@ describe("loadConfig", () => {
     expect(message).not.toBe("");
     for (const value of Object.values(env))
       expect(message).not.toContain(value);
+  });
+});
+
+describe("secret comparison", () => {
+  test("a secret matches only itself, and an empty one matches nothing", () => {
+    expect(secretMatches("s3cret", "s3cret")).toBe(true);
+    expect(secretMatches("s3cret", "s3creT")).toBe(false);
+    expect(secretMatches("s3cret", "s3cret-longer")).toBe(false);
+    expect(secretMatches("", "")).toBe(false);
+  });
+
+  test("a token matches the SHA-256 it hashes to, and nothing else", () => {
+    const hash = new Bun.CryptoHasher("sha256").update("tok").digest("hex");
+    expect(tokenMatchesSha256(hash, "tok")).toBe(true);
+    expect(tokenMatchesSha256(hash.toUpperCase(), "tok")).toBe(true);
+    expect(tokenMatchesSha256(hash, "tok2")).toBe(false);
+    expect(tokenMatchesSha256(hash, hash)).toBe(false);
+    expect(tokenMatchesSha256("", "")).toBe(false);
+    expect(tokenMatchesSha256("ab", "tok")).toBe(false);
   });
 });

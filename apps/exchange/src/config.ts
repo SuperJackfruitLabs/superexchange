@@ -1,7 +1,9 @@
 /**
- * The service's settings, read once at boot. A missing or malformed setting stops the service
- * before it listens, and the error names the setting, never its value.
+ * The service's settings, read once at boot, and how a presented secret is checked against one.
+ * A missing or malformed setting stops the service before it listens, and the error names the
+ * setting, never its value.
  */
+import { createHash, timingSafeEqual } from "node:crypto";
 
 /** Settings that have no default. */
 export const REQUIRED = [
@@ -15,7 +17,15 @@ export const REQUIRED = [
   "MATRIX_HS_TOKEN",
   /** The secret the event relay signs its deliveries with (treaty's `verifyDelivery`). */
   "TREATY_RELAY_DELIVERY_SECRET",
+  /**
+   * The SHA-256 of the operator's bearer token for the board opt-in API, as 64 hex digits. The
+   * token itself is never given to the service, so a leaked environment does not leak it.
+   */
+  "SUPEREXCHANGE_OPERATOR_TOKEN_SHA256",
 ] as const;
+
+/** Where the store keeps its database when `SUPEREXCHANGE_DATA_DIR` is unset. */
+export const DEFAULT_DATA_DIR = "/data";
 
 export interface Config {
   port: number;
@@ -24,6 +34,10 @@ export interface Config {
   asToken: string;
   hsToken: string;
   relayDeliverySecret: string;
+  /** The directory the store keeps its database in; absolute. */
+  dataDir: string;
+  /** The SHA-256 of the operator's bearer token, 64 lowercase hex digits. */
+  operatorTokenSha256: string;
 }
 
 export class ConfigError extends Error {
@@ -49,12 +63,29 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
   const asToken = read("MATRIX_AS_TOKEN");
   const hsToken = read("MATRIX_HS_TOKEN");
   const relayDeliverySecret = read("TREATY_RELAY_DELIVERY_SECRET");
+  const operatorTokenSha256 = read(
+    "SUPEREXCHANGE_OPERATOR_TOKEN_SHA256",
+  ).toLowerCase();
 
   if (homeserverUrl !== "" && !isHttpUrl(homeserverUrl)) {
     problems.push("MATRIX_HOMESERVER_URL is not an http(s) URL");
   }
   if (asToken !== "" && asToken === hsToken) {
     problems.push("MATRIX_AS_TOKEN and MATRIX_HS_TOKEN are the same");
+  }
+
+  if (
+    operatorTokenSha256 !== "" &&
+    !/^[0-9a-f]{64}$/.test(operatorTokenSha256)
+  ) {
+    problems.push(
+      "SUPEREXCHANGE_OPERATOR_TOKEN_SHA256 is not 64 hex digits (a SHA-256)",
+    );
+  }
+
+  const dataDir = env.SUPEREXCHANGE_DATA_DIR?.trim() || DEFAULT_DATA_DIR;
+  if (!dataDir.startsWith("/")) {
+    problems.push("SUPEREXCHANGE_DATA_DIR is not an absolute path");
   }
 
   let port = DEFAULT_PORT;
@@ -74,6 +105,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     asToken,
     hsToken,
     relayDeliverySecret,
+    dataDir,
+    operatorTokenSha256,
   };
 }
 
@@ -86,4 +119,30 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Does a presented secret equal the expected one? In constant time: both sides are hashed first,
+ * so neither the content nor the length of a wrong guess changes how long the answer takes. An
+ * empty expected secret matches nothing.
+ */
+export function secretMatches(expected: string, presented: string): boolean {
+  if (expected === "") return false;
+  return timingSafeEqual(sha256(expected), sha256(presented));
+}
+
+/**
+ * Does a presented token hash to the expected SHA-256 (64 hex digits)? In constant time. A
+ * malformed expected hash matches nothing.
+ */
+export function tokenMatchesSha256(
+  expectedHex: string,
+  presented: string,
+): boolean {
+  if (!/^[0-9a-fA-F]{64}$/.test(expectedHex)) return false;
+  return timingSafeEqual(Buffer.from(expectedHex, "hex"), sha256(presented));
+}
+
+function sha256(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
 }
