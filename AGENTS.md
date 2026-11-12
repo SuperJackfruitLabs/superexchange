@@ -39,10 +39,16 @@ Never commit secrets or keys.
 ## Releases
 
 Versions start at 0.0.1, and only the operator pushes tags. A `v*` tag on main deploys
-production (`deploy/production/release.sh`, rolling back on failure).
+production (`deploy/production/release.sh`, rolling back on failure) through the shared release
+workflow; `.github/release-config.json` holds its settings. `CHANGELOG.md` keeps an
+`## Unreleased` section: add an entry with each change people will notice. Before a tag, a
+release-prep PR runs `sh .github/release/prep-release.sh vX.Y.Z`.
 
 ## Shared kit
 
 `.forgejo/workflows/claude-review.yml`, the `claude-triage` job in `ci.yml`, and
 `.github/claude/claude-ci.mjs` are copies of the shared claude-ci kit. Change the master and
 sync; never edit a copy.
+
+`.github/workflows/release.yml` and `.github/release/` are copies of the shared release kit
+(estate `release/`). Change the master and sync; never edit a copy.

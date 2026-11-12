@@ -230,10 +230,13 @@ A missing or malformed setting stops it before it listens, naming the setting, n
 
 ## Production
 
-A `vX.Y.Z` tag on main deploys production (`release.yml` in the GitHub workflows, on the GitHub
-mirror only): after `bun run check` passes, the production host runs that tag's
-`deploy/production/release.sh` through its forced-command deploy key. Only the operator pushes
-tags. The workflow does nothing until the mirror has the `PROD_HOST` variable and the
+A `vX.Y.Z` tag on main deploys production through the suite's shared release workflow
+(`.github/workflows/release.yml`, settings in `.github/release-config.json`, on the GitHub mirror
+only). It checks that forge CI passed for the tag's commit, or runs `bun run check` at the tag
+when it cannot read that; then the production host runs that tag's
+`deploy/production/release.sh` through its forced-command deploy key (`superexchange <tag>`), and
+the release notes go up on GitHub with the tag's section of [`CHANGELOG.md`](CHANGELOG.md). Only
+the operator pushes tags. The deploy needs the mirror's `PROD_HOST` variable and the
 `PROD_SSH_KEY` and `PROD_KNOWN_HOSTS` secrets.
 
 `release.sh` builds the tag's image, recreates the service (`deploy/production/compose.yml`),
