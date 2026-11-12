@@ -7,12 +7,20 @@ import {
   gateV2Content,
   type GatePendingDelivery,
 } from "@superjackfruitlabs/treaty-matrix-events";
-import { createClient, type MatrixEvent } from "../src/appservice/index.ts";
 import {
+  createClient,
+  type MatrixEvent,
+  type RoomCrypto,
+} from "../src/appservice/index.ts";
+import {
+  PENDING_MAX,
+  PENDING_TTL_MS,
   createBoardChat,
   createBoardRooms,
+  createRoomSender,
   gateOffer,
   gateTxnId,
+  type GateAnswers,
 } from "../src/board-chat/index.ts";
 import type { Store } from "../src/store/index.ts";
 import { captureLog, gateBody, tempStore } from "./helpers.ts";
@@ -44,6 +52,8 @@ function fakeHomeserver() {
   const calls: Call[] = [];
   const aliases = new Map<string, string>();
   const joined = new Map<string, Set<string>>();
+  /** Rooms whose state holds `m.room.encryption`. */
+  const encryptedRooms = new Set<string>();
   const txns = new Map<string, string>();
   const sent: Array<{
     roomId: string;
@@ -82,6 +92,9 @@ function fakeHomeserver() {
         return Response.json({ errcode: "M_ROOM_IN_USE" }, { status: 400 });
       const roomId = `!room${++rooms}:${SERVER}`;
       aliases.set(alias, roomId);
+      const initial = (body?.initial_state ?? []) as Array<{ type?: string }>;
+      if (initial.some((e) => e.type === "m.room.encryption"))
+        encryptedRooms.add(roomId);
       joined.set(roomId, new Set([as]));
       return Response.json({ room_id: roomId });
     }
@@ -92,6 +105,15 @@ function fakeHomeserver() {
       const roomId = aliases.get(directory[1] as string);
       return roomId
         ? Response.json({ room_id: roomId })
+        : Response.json({ errcode: "M_NOT_FOUND" }, { status: 404 });
+    }
+    const state =
+      /^\/_matrix\/client\/v3\/rooms\/([^/]+)\/state\/m\.room\.encryption\/$/.exec(
+        path,
+      );
+    if (state) {
+      return encryptedRooms.has(state[1] as string)
+        ? Response.json({ algorithm: "m.megolm.v1.aes-sha2" })
         : Response.json({ errcode: "M_NOT_FOUND" }, { status: 404 });
     }
     const roomPath =
@@ -128,6 +150,7 @@ function fakeHomeserver() {
     sent,
     failures,
     aliases,
+    encryptedRooms,
     /** A person accepting the invite, as the homeserver sees it. */
     join(roomId: string, userId: string) {
       joined.get(roomId)?.add(userId);
@@ -136,11 +159,101 @@ function fakeHomeserver() {
   };
 }
 
+/**
+ * Encryption without a machine: an envelope that names its session and carries the event, and a
+ * decrypt that opens only sessions whose key has "arrived". The real machine is crypto.test.ts's.
+ */
+function fakeCrypto() {
+  const encrypted: Array<{
+    roomId: string;
+    members: string[];
+    eventType: string;
+    content: Record<string, unknown>;
+  }> = [];
+  const keys = new Set<string>();
+  let failing = false;
+  const crypto: RoomCrypto = {
+    async encrypt(roomId, members, eventType, content) {
+      encrypted.push({ roomId, members, eventType, content });
+      return {
+        algorithm: "m.megolm.v1.aes-sha2",
+        session_id: "outbound",
+        ciphertext: JSON.stringify({ type: eventType, content }),
+      };
+    },
+    async decrypt(event) {
+      if (failing) throw new Error("the machine is broken");
+      const c = event.content as { session_id?: string; ciphertext?: string };
+      if (!c?.session_id || !keys.has(c.session_id)) return null;
+      return JSON.parse(String(c.ciphertext)) as {
+        type: string;
+        content: Record<string, unknown>;
+      };
+    },
+  };
+  return {
+    crypto,
+    encrypted,
+    /** The room key for a session arrives. */
+    giveKey: (sessionId: string) => keys.add(sessionId),
+    breakMachine: () => {
+      failing = true;
+    },
+  };
+}
+
+/** A person's encrypted message, as the homeserver delivers it. */
+function encryptedEvent(
+  roomId: string,
+  sender: string,
+  content: Record<string, unknown>,
+  { eventId = "$enc1", sessionId = "ana-session" } = {},
+): MatrixEvent {
+  return {
+    type: "m.room.encrypted",
+    room_id: roomId,
+    sender,
+    event_id: eventId,
+    content: {
+      algorithm: "m.megolm.v1.aes-sha2",
+      session_id: sessionId,
+      ciphertext: JSON.stringify({ type: "m.room.message", content }),
+    },
+  };
+}
+
+/** Answers that only record what reached them: an answer is any message with `answer` in it. */
+function recordingAnswers() {
+  const handled: MatrixEvent[] = [];
+  const answers: GateAnswers = {
+    isAnswer: (e) =>
+      e.type === "m.room.message" &&
+      typeof (e.content as { answer?: unknown })?.answer === "string",
+    handle: async (e) => {
+      handled.push(e);
+      return { status: "resolved" };
+    },
+    resume: () => undefined,
+  };
+  return { answers, handled };
+}
+
 function setup({
   plaintextRooms = true,
   invitees = [ANA, BO],
-}: { plaintextRooms?: boolean; invitees?: string[] } = {}) {
-  const t = tempStore();
+  crypto = null,
+  answers,
+  now,
+  store: given,
+}: {
+  plaintextRooms?: boolean;
+  invitees?: string[];
+  crypto?: RoomCrypto | null;
+  answers?: GateAnswers;
+  now?: () => Date;
+  store?: Store;
+} = {}) {
+  const t = given ? { store: given, cleanup: () => undefined } : tempStore();
   cleanups.push(t.cleanup);
   const hs = fakeHomeserver();
   const { log, lines } = captureLog();
@@ -154,14 +267,22 @@ function setup({
     store: t.store,
     client,
     serverName: SERVER,
+    encryptNewRooms: !plaintextRooms,
     log,
   });
   const chat = createBoardChat({
     store: t.store,
-    client,
+    sender: createRoomSender({
+      store: t.store,
+      client,
+      crypto,
+      plaintextRooms,
+    }),
     rooms,
-    plaintextRooms,
+    crypto,
     log,
+    ...(answers ? { answers } : {}),
+    ...(now ? { now } : {}),
   });
   t.store.upsertBoard({
     boardId: "brd_7c1f",
@@ -206,31 +327,345 @@ async function roomWithAnaJoined(s: ReturnType<typeof setup>) {
   return room;
 }
 
-describe("plaintext rooms off (the default): fail closed", () => {
-  test("nothing is made or posted, and the gate stays recorded and unposted", async () => {
-    const s = setup({ plaintextRooms: false });
+describe("encrypted board rooms (plaintext rooms off, the default)", () => {
+  function encryptedSetup(
+    options: Omit<Parameters<typeof setup>[0] & object, "crypto"> = {},
+  ) {
+    const c = fakeCrypto();
+    const s = setup({ plaintextRooms: false, crypto: c.crypto, ...options });
+    return { ...s, c };
+  }
+
+  test("a new room is made with Megolm in its initial state, and recorded encrypted", async () => {
+    const s = encryptedSetup();
+    deliver(s.store);
+    expect(await s.chat.post("gte_1")).toMatchObject({ status: "held" });
+    expect(s.hs.callsTo("/createRoom")[0]?.body?.initial_state).toEqual([
+      {
+        type: "m.room.encryption",
+        state_key: "",
+        content: { algorithm: "m.megolm.v1.aes-sha2" },
+      },
+    ]);
+    expect(s.store.boardRoom("brd_7c1f")?.encrypted).toBe(true);
+    expect(s.lines).toContain("board-chat: brd_7c1f room made, encrypted");
+  });
+
+  test("the gate's prose and card go out encrypted, under the gate's transaction ids, to everyone joined or invited", async () => {
+    const s = encryptedSetup();
+    const room = await roomWithAnaJoined(s);
+    const gate = deliver(s.store);
+    expect(await s.chat.post("gte_1")).toMatchObject({ status: "posted" });
+
+    // Nothing in the clear: every send is an envelope.
+    expect(s.hs.sent.map((e) => e.type)).toEqual([
+      "m.room.encrypted",
+      "m.room.encrypted",
+    ]);
+    expect(s.c.encrypted.map((e) => e.eventType)).toEqual([
+      "m.room.message",
+      GATE_EVENT_TYPE,
+    ]);
+    // What is encrypted is treaty's content, unchanged.
+    expect(s.c.encrypted[0]?.content).toEqual({
+      ...gateV2Content(gate),
+      [GATE_REQUEST_CONTENT_KEY]: gateRequestCard(gate),
+    });
+    expect(s.c.encrypted[1]?.content).toEqual(gateEventContent(gate));
+    // The speaker, Ana who joined, and Bo who is invited and not yet joined.
+    expect(s.c.encrypted[0]?.members.toSorted()).toEqual(
+      [ANA, BO, SPEAKER].toSorted(),
+    );
+    expect(s.c.encrypted.every((e) => e.roomId === room.roomId)).toBe(true);
+    const txns = s.hs
+      .callsTo("/send/m.room.encrypted/")
+      .map((c) => c.path.split("/").pop());
+    expect(txns).toEqual([
+      gateTxnId("gte_1", "prose"),
+      gateTxnId("gte_1", "card"),
+    ]);
+  });
+
+  test("a room made in plaintext earlier is left as it is: nothing is posted into it, encrypted or not, and that is logged once", async () => {
+    const s = encryptedSetup();
+    s.store.recordBoardRoom(
+      "brd_7c1f",
+      `!old:${SERVER}`,
+      "superexchange_board_brd_7c1f",
+      false,
+    );
+    s.store.recordMembership(`!old:${SERVER}`, ANA, "join");
+    deliver(s.store);
+    deliver(s.store, { gateId: "gte_2" });
+    expect(await s.chat.post("gte_1")).toEqual({
+      status: "refused",
+      reason: "plaintext room",
+    });
+    s.chat.resume();
+    await s.chat.idle();
+    expect(s.hs.calls).toEqual([]);
+    expect(s.c.encrypted).toEqual([]);
+    expect(s.store.gateEvent("gte_1")).toBeNull();
+    expect(s.store.unpostedGates().map((g) => g.gateId)).toEqual([
+      "gte_1",
+      "gte_2",
+    ]);
+    expect(s.lines.filter((l) => l.includes("left as it is"))).toEqual([
+      "board-chat: brd_7c1f's room was made without encryption and is left as it is: nothing is posted into it while SUPEREXCHANGE_PLAINTEXT_ROOMS is off",
+    ]);
+  });
+
+  test("an encrypted room never gets plaintext, even with plaintext rooms on", async () => {
+    const c = fakeCrypto();
+    const s = setup({ plaintextRooms: true, crypto: c.crypto });
+    s.store.recordBoardRoom(
+      "brd_7c1f",
+      `!enc:${SERVER}`,
+      "superexchange_board_brd_7c1f",
+      true,
+    );
+    s.hs.join(`!enc:${SERVER}`, ANA);
+    s.store.recordMembership(`!enc:${SERVER}`, ANA, "join");
+    deliver(s.store);
+    expect(await s.chat.post("gte_1")).toMatchObject({ status: "posted" });
+    expect(s.hs.sent.map((e) => e.type)).toEqual([
+      "m.room.encrypted",
+      "m.room.encrypted",
+    ]);
+  });
+
+  test("an encrypted room without the speaker's keys is not posted into", async () => {
+    const s = setup({ plaintextRooms: true, crypto: null });
+    s.store.recordBoardRoom(
+      "brd_7c1f",
+      `!enc:${SERVER}`,
+      "superexchange_board_brd_7c1f",
+      true,
+    );
+    s.store.recordMembership(`!enc:${SERVER}`, ANA, "join");
     deliver(s.store);
     expect(await s.chat.post("gte_1")).toEqual({
       status: "refused",
-      reason: "plaintext rooms off",
+      reason: "encryption unavailable",
     });
     expect(s.hs.calls).toEqual([]);
-    expect(s.store.boardRoom("brd_7c1f")).toBeNull();
-    expect(s.store.gateEvent("gte_1")).toBeNull();
-    expect(s.store.unpostedGates().map((g) => g.gateId)).toEqual(["gte_1"]);
+    expect(s.lines).toContain(
+      "board-chat: brd_7c1f's room is encrypted and the speaker has no keys (SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set): nothing is posted into it",
+    );
   });
 
-  test("the refusal is logged once per board", async () => {
-    const s = setup({ plaintextRooms: false });
+  test("a room found by its alias is recorded as its state says", async () => {
+    for (const [encrypted, plaintextRooms] of [
+      [true, true],
+      [false, false],
+    ] as const) {
+      const c = fakeCrypto();
+      const s = setup({ plaintextRooms, crypto: c.crypto });
+      s.hs.aliases.set(
+        `#superexchange_board_brd_7c1f:${SERVER}`,
+        `!earlier:${SERVER}`,
+      );
+      if (encrypted) s.hs.encryptedRooms.add(`!earlier:${SERVER}`);
+      deliver(s.store);
+      await s.chat.post("gte_1");
+      expect(s.store.boardRoom("brd_7c1f")).toMatchObject({
+        roomId: `!earlier:${SERVER}`,
+        encrypted,
+      });
+    }
+  });
+
+  test("a room whose encryption cannot be read is not recorded", async () => {
+    const s = encryptedSetup();
+    s.hs.aliases.set(
+      `#superexchange_board_brd_7c1f:${SERVER}`,
+      `!earlier:${SERVER}`,
+    );
+    s.hs.failures.set("/state/m.room.encryption", 500);
     deliver(s.store);
-    deliver(s.store, { gateId: "gte_2" });
-    s.chat.resume();
-    await s.chat.idle();
-    await s.chat.post("gte_1");
-    const refusals = s.lines.filter((l) => l.includes("encryption"));
-    expect(refusals).toEqual([
-      "board-chat: brd_7c1f has gates to post, and end-to-end encryption is not available yet: nothing is posted while SUPEREXCHANGE_PLAINTEXT_ROOMS is off",
+    expect(await s.chat.post("gte_1")).toEqual({
+      status: "failed",
+      step: "room",
+    });
+    expect(s.store.boardRoom("brd_7c1f")).toBeNull();
+  });
+
+  test("an encrypted send whose room members cannot be read is not sent", async () => {
+    const s = encryptedSetup();
+    await roomWithAnaJoined(s);
+    deliver(s.store);
+    s.hs.failures.set("/joined_members", 502);
+    expect(await s.chat.post("gte_1")).toEqual({
+      status: "failed",
+      step: "send",
+    });
+    expect(s.hs.sent).toEqual([]);
+    expect(s.c.encrypted).toEqual([]);
+  });
+});
+
+describe("encrypted events coming in", () => {
+  function inbound(options: { now?: () => Date } = {}) {
+    const c = fakeCrypto();
+    const a = recordingAnswers();
+    const s = setup({
+      plaintextRooms: false,
+      crypto: c.crypto,
+      answers: a.answers,
+      ...options,
+    });
+    s.store.recordBoardRoom(
+      "brd_7c1f",
+      ROOM_ID,
+      "superexchange_board_brd_7c1f",
+      true,
+    );
+    return { ...s, c, handled: a.handled };
+  }
+  const ROOM_ID = `!board:${SERVER}`;
+
+  test("an answer is decrypted before it is read, and keeps its envelope's sender, room and id", async () => {
+    const s = inbound();
+    s.c.giveKey("ana-session");
+    await s.chat.onEvents("t1", [
+      encryptedEvent(ROOM_ID, ANA, { msgtype: "m.text", answer: "approve" }),
     ]);
+    await s.chat.idle();
+    expect(s.handled).toEqual([
+      {
+        type: "m.room.message",
+        room_id: ROOM_ID,
+        sender: ANA,
+        event_id: "$enc1",
+        content: { msgtype: "m.text", answer: "approve" },
+      },
+    ]);
+    expect(s.store.pendingDecrypts()).toEqual([]);
+  });
+
+  test("one whose key has not arrived waits in the store, still encrypted, logged once without its content", async () => {
+    const s = inbound();
+    const event = encryptedEvent(ROOM_ID, ANA, { answer: "secret-answer" });
+    await s.chat.onEvents("t1", [event]);
+    await s.chat.onEvents("t2", [event]);
+    await s.chat.idle();
+    expect(s.handled).toEqual([]);
+    expect(s.store.pendingDecrypts()).toMatchObject([
+      { eventId: "$enc1", roomId: ROOM_ID, event },
+    ]);
+    const parked = s.lines.filter((l) => l.includes("waits for its key"));
+    expect(parked).toEqual([
+      "board-chat: an encrypted event in the room of brd_7c1f cannot be decrypted yet; it waits for its key",
+    ]);
+    expect(s.lines.join("\n")).not.toContain("secret-answer");
+
+    // The key arrives: it is read once, and leaves the store.
+    s.c.giveKey("ana-session");
+    await s.chat.retryPending();
+    await s.chat.retryPending();
+    await s.chat.idle();
+    expect(s.handled.map((e) => e.event_id)).toEqual(["$enc1"]);
+    expect(s.store.pendingDecrypts()).toEqual([]);
+  });
+
+  test("a waiting event outlives a restart, and is read at boot once its key is here", async () => {
+    const first = inbound();
+    await first.chat.onEvents("t1", [
+      encryptedEvent(ROOM_ID, ANA, { answer: "approve" }),
+    ]);
+    await first.chat.idle();
+
+    const c = fakeCrypto();
+    c.giveKey("ana-session");
+    const a = recordingAnswers();
+    const again = setup({
+      plaintextRooms: false,
+      crypto: c.crypto,
+      answers: a.answers,
+      store: first.store,
+    });
+    again.chat.resume();
+    await again.chat.idle();
+    expect(a.handled.map((e) => e.event_id)).toEqual(["$enc1"]);
+    expect(first.store.pendingDecrypts()).toEqual([]);
+  });
+
+  test("an event that never gets its key is given up after the wait, and not read", async () => {
+    let at = new Date("2026-11-12T10:00:00.000Z");
+    const s = inbound({ now: () => at });
+    await s.chat.onEvents("t1", [
+      encryptedEvent(ROOM_ID, ANA, { answer: "approve" }),
+    ]);
+    await s.chat.idle();
+    s.store.pendingDecrypts(); // parked with the store's own clock
+    at = new Date(Date.now() + PENDING_TTL_MS + 60_000);
+    s.c.giveKey("ana-session");
+    await s.chat.retryPending();
+    await s.chat.idle();
+    expect(s.handled).toEqual([]);
+    expect(s.store.pendingDecrypts()).toEqual([]);
+    expect(s.lines).toContain(
+      "board-chat: an encrypted event in the room of brd_7c1f never got its key; given up",
+    );
+  });
+
+  test("a machine that cannot decrypt parks the event rather than losing it", async () => {
+    const s = inbound();
+    s.c.breakMachine();
+    await s.chat.onEvents("t1", [
+      encryptedEvent(ROOM_ID, ANA, { answer: "approve" }),
+    ]);
+    await s.chat.idle();
+    expect(s.store.pendingDecrypts()).toHaveLength(1);
+    expect(s.lines).toContain(
+      "board-chat: an encrypted event could not be decrypted (Error)",
+    );
+  });
+
+  test("this service's own events, and rooms that are not a board's, are neither decrypted nor parked", async () => {
+    const s = inbound();
+    s.c.giveKey("ana-session");
+    await s.chat.onEvents("t1", [
+      encryptedEvent(
+        ROOM_ID,
+        SPEAKER,
+        { answer: "approve" },
+        { eventId: "$a" },
+      ),
+      encryptedEvent(
+        ROOM_ID,
+        `@superexchange_other:${SERVER}`,
+        { answer: "approve" },
+        { eventId: "$b" },
+      ),
+      encryptedEvent(
+        `!other:${SERVER}`,
+        ANA,
+        { answer: "approve" },
+        { eventId: "$c" },
+      ),
+    ]);
+    await s.chat.idle();
+    expect(s.handled).toEqual([]);
+    expect(s.store.pendingDecrypts()).toEqual([]);
+  });
+
+  test("at most PENDING_MAX wait: the oldest go first", () => {
+    const s = inbound();
+    for (let i = 0; i < PENDING_MAX + 2; i++) {
+      s.store.parkPendingDecrypt(
+        `$e${String(i).padStart(4, "0")}`,
+        ROOM_ID,
+        {},
+        PENDING_MAX,
+      );
+    }
+    const left = s.store.pendingDecrypts();
+    expect(left).toHaveLength(PENDING_MAX);
+    expect(left.map((r) => r.eventId)).not.toContain("$e0000");
+    expect(left.map((r) => r.eventId)).toContain(
+      `$e${String(PENDING_MAX + 1).padStart(4, "0")}`,
+    );
   });
 });
 
