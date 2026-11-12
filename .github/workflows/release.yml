@@ -112,17 +112,21 @@ jobs:
         run: |
           git merge-base --is-ancestor "$SHA" origin/main ||
             { echo "::error::$SHA is not on main"; exit 1; }
+      # A pre-release of a vX.Y.Z tag is a deploy_from_release run that never finished.
       - name: Not already published
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          draft=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null || echo missing)
-          if [ "$draft" = false ]; then
-            echo "::error::$TAG is already published, and a published release is never rebuilt. Release a new tag, or dispatch with summary_only to refresh its summary."
-            exit 1
-          fi
-          [ "$draft" = true ] && echo "finishing the draft an earlier run left"
-          exit 0
+          state=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft,isPrerelease \
+            -q '"\(.isDraft) \(.isPrerelease)"' 2>/dev/null || echo missing)
+          case "$state:$TAG" in
+            missing:*) ;;
+            true\ *) echo "finishing the draft an earlier run left" ;;
+            "false true":*-*|"false false":*)
+              echo "::error::$TAG is already published, and a published release is never rebuilt. Release a new tag, or dispatch with summary_only to refresh its summary."
+              exit 1 ;;
+            *) echo "finishing the release an earlier run left as a pre-release" ;;
+          esac
       - name: Main CI passed for this commit
         id: ci
         env:
@@ -380,6 +384,18 @@ jobs:
             gh release upload "$TAG" release-dist/* --clobber
           fi
 
+      # deploy_from_release: the production host downloads the release's own files, which a draft
+      # does not serve. The release goes out as a pre-release (never latest) for the deploy, and
+      # back to a draft if the deploy or smoke fails.
+      - name: Serve the release's files for the deploy (as a pre-release)
+        id: early
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ "$(jq -r '.deploy_from_release // false' "$CONFIG")" = true ] || exit 0
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
+          echo "published=true" >> "$GITHUB_OUTPUT"
+
       # `secrets` in the config: those secrets, by name, for the deploy, smoke and rollback.
       - name: Named secrets
         env:
@@ -450,6 +466,11 @@ jobs:
             ssh -i ~/.ssh/prod -o BatchMode=yes "$user@$PROD_HOST" "$door" "$PREV"
           fi
           echo "::error::rolled back to ${PREV:-the previous release}; the release stays a draft"
+      - name: Back to a draft
+        if: failure() && steps.early.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$TAG" --draft=true
 
       # Latest only when no published release is newer: re-running an older tag must not move
       # installers that follow releases/latest backwards.
@@ -462,7 +483,7 @@ jobs:
             --json tagName -q '.[].tagName'; echo "$TAG"; } | grep -E '^v[0-9]' | sort -V | tail -n 1)
           latest=false
           [ "$newest" = "$TAG" ] && latest=true
-          gh release edit "$TAG" --draft=false --latest="$latest"
+          gh release edit "$TAG" --draft=false --prerelease=false --latest="$latest"
 
   # publish.after_release: the package goes out after the release is published, from the release's
   # own files (RELEASE_DIST), so it is exactly what was attested.
