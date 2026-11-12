@@ -1,6 +1,6 @@
 #!/bin/sh
 # Helpers for the shared release workflow, one subcommand each, so the workflow stays short and
-# each piece can be tested on its own (release/test/scripts.test.sh in estate).
+# each piece can be tested on its own (the kit's scripts.test.sh).
 #
 #   kit.sh secrets <release-config.json>
 #       Exports the secrets the config names in "secrets" to the following steps of the job

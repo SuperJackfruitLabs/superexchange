@@ -1,4 +1,4 @@
-# Shared release workflow for the SuperJackfruit suite. Master copy: estate release/workflow/.
+# Shared release workflow for the SuperJackfruit suite. Master copy: the suite's release kit.
 # Every product carries this file byte-identical at .github/workflows/release.yml, plus the
 # shared scripts under .github/release/. Everything product-specific is in
 # .github/release-config.json. Do not edit a product's copy; change the master and sync it.
