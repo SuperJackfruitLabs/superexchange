@@ -21,8 +21,16 @@ has opted in. For each such gate it makes the board's room once (speaker
 `@superexchange_board`, shown as "superpipeline"; alias `#superexchange_board_<board id>`),
 invites the board's people, holds the gate until one of them has joined, then posts it exactly
 once: the gate.v2 prose message and the gate card, both built by treaty. Gates not yet posted are
-tried again at boot and when a person joins. Answers, questions, follow-ups, waiting cards and
-the sweeps move here from the AgentPod hub in later steps.
+tried again at boot and when a person joins.
+
+A person's answer to a gate card (`gate.decision` v1 or v2, read by treaty) is carried back: in a
+board room this service owns, naming a gate it posted there and referencing its card or prose,
+from a sender outside `@superexchange_*`. The organization plane says who the sender is; only a
+person may answer, and a gate.v2 answer must name an option, subject or variant the gate offered.
+The plane then asserts the sender for SuperPipeline, the gate is resolved there as that person,
+and one receipt is posted (a prose line and `dev.superpipeline.gate.outcome.v1`). An answer acts
+once: a repeat is told the gate was already decided. Questions, follow-ups, waiting cards and the
+sweeps move here from the AgentPod hub in later steps.
 
 **Nothing is encrypted yet.** Board rooms are end-to-end encrypted, and SuperExchange cannot
 encrypt until a later step. Until then it makes and posts into no room at all, unless
@@ -49,6 +57,8 @@ MATRIX_AS_TOKEN=… MATRIX_HS_TOKEN=… \
 TREATY_RELAY_DELIVERY_SECRET=… \
 SUPEREXCHANGE_OPERATOR_TOKEN_SHA256=$(printf %s "$OPERATOR_TOKEN" | shasum -a 256 | cut -d' ' -f1) \
 SUPEREXCHANGE_DATA_DIR=$PWD/.data \
+ORG_PLANE_URL=https://accounts.example ORG_PLANE_SERVICE_CREDENTIAL=svc_…:… \
+SUPERPIPELINE_URL=https://pipeline.example \
 bun apps/exchange/src/main.ts
 curl http://127.0.0.1:8080/healthz
 ```
@@ -64,6 +74,9 @@ curl http://127.0.0.1:8080/healthz
 | `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset             |
 | `PORT`                                | Where it listens; 8080 when unset                                           |
 | `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                           |
+| `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                             |
+| `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                    |
+| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved; also the assertion audience  |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 

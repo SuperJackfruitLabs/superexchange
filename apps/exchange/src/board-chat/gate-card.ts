@@ -33,24 +33,64 @@ import {
   GATE_EVENT_TYPE,
   GATE_REQUEST_CONTENT_KEY,
   gateEventContent,
+  gateOptionsV2,
   gateRequestCard,
+  gateSubjectV2,
   gateV2Content,
+  gateVariantsV2,
   isGatePending,
+  quorumV2,
+  type GatePendingDelivery,
 } from "@superjackfruitlabs/treaty-matrix-events";
 import type {
   AppserviceClient,
   EventsHandler,
   MatrixEvent,
 } from "../appservice/index.ts";
-import type { Store } from "../store/index.ts";
+import type { GateOffer, Store } from "../store/index.ts";
+import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
 import { describe, type BoardRooms } from "./rooms.ts";
 
 /** The event type of the prose message. */
 const MESSAGE = "m.room.message";
 
 /** The transaction id a gate's event is sent under: the same on every try. */
-export function gateTxnId(gateId: string, part: "prose" | "card"): string {
+export function gateTxnId(
+  gateId: string,
+  part: "prose" | "card" | "outcome.prose" | "outcome.card",
+): string {
   return `superexchange.gate.${gateId}.${part}`;
+}
+
+/**
+ * What a gate offers, exactly as its gate.v2 carries it (the hub's `claimGate`): the options, the
+ * subject an approval binds to, or the variants it offers a choice of, and its quorum. An answer
+ * is checked against this record, never against a list.
+ */
+export function gateOffer(gate: GatePendingDelivery): GateOffer {
+  const subject = gateSubjectV2(gate);
+  const variants = gateVariantsV2(gate);
+  return {
+    options: gateOptionsV2(gate).map((o) => ({
+      id: o.id,
+      label: o.label,
+      meaning: o.meaning,
+      needs_comment: o.needs_comment,
+    })),
+    subjectId: subject?.id ?? null,
+    subjectDigest: subject?.digest ?? null,
+    subjectPreviewComplete: subject?.preview_complete ?? null,
+    variants:
+      variants?.map((v) => ({
+        id: v.id,
+        label: v.label,
+        subject_id: v.subject.id,
+        digest: v.subject.digest,
+        preview_complete: v.subject.preview_complete,
+        expires_at: v.subject.expires_at,
+      })) ?? null,
+    quorum: quorumV2(gate.quorum),
+  };
 }
 
 export type PostOutcome =
@@ -90,6 +130,8 @@ export interface BoardChatDeps {
   rooms: BoardRooms;
   /** `SUPEREXCHANGE_PLAINTEXT_ROOMS`: off, nothing is made or posted. */
   plaintextRooms: boolean;
+  /** People's answers to the gates posted here (`gate-answer.ts`); absent, none is read. */
+  answers?: GateAnswers;
   log: (line: string) => void;
 }
 
@@ -100,8 +142,14 @@ export interface BoardChat {
   gateAccepted(gateId: string): void;
   /** Every delivered gate not yet posted: queued at boot. */
   resume(): void;
-  /** The homeserver's events: memberships of board rooms kept, and a person's join posts the held gates. */
+  /**
+   * The homeserver's events: a gate answer is queued to be carried to the board, before anything
+   * else reads the event; memberships of board rooms are kept, and a person's join posts the held
+   * gates.
+   */
   onEvents: EventsHandler;
+  /** Carry one answer, queued behind every post and answer before it. */
+  answer(event: MatrixEvent): Promise<AnswerOutcome | null>;
   /** Settles when every queued post has run. */
   idle(): Promise<void>;
 }
@@ -171,8 +219,9 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
         );
         return { status: "failed", step: "membership" };
       }
-      // The claim is the gate on the send, not a record of it: taken before anything is sent.
-      store.claimGateEvent(gateId, board.boardId, roomId);
+      // The claim is the gate on the send, not a record of it: taken before anything is sent,
+      // with what the gate offers, so an answer to it is checked against what was posted.
+      store.claimGateEvent(gateId, board.boardId, roomId, gateOffer(gate));
     }
 
     const claim = store.gateEvent(gateId);
@@ -216,6 +265,17 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   }
 
   const post = (gateId: string) => enqueue(() => postOnce(gateId));
+  const answers = deps.answers;
+  // Answers share the posts' queue: an answer to a gate whose post is still running waits for it.
+  const answer = (event: MatrixEvent) =>
+    enqueue(async () => (answers ? answers.handle(event) : null)).catch(
+      (error: unknown) => {
+        log(
+          `board-chat: a gate answer could not be carried (${describe(error)})`,
+        );
+        return null;
+      },
+    );
   const postAll = (boardId?: string) => {
     for (const gate of store.unpostedGates(boardId)) void post(gate.gateId);
   };
@@ -223,12 +283,21 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   return {
     post,
     gateAccepted: (gateId) => void post(gateId),
-    resume: () => postAll(),
+    answer,
+    resume: () => {
+      answers?.resume();
+      postAll();
+    },
     idle: () => queue.then(() => undefined),
 
     onEvents(_txnId, events) {
       const woken = new Set<string>();
       for (const event of events) {
+        // A decision, before anything else: it answers the board, and nothing else may read it.
+        if (answers?.isAnswer(event)) {
+          void answer(event);
+          continue;
+        }
         const member = membershipOf(event);
         if (member === null) continue;
         const room = store.boardRoomByRoomId(member.roomId);

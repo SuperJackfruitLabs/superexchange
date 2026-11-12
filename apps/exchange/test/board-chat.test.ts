@@ -11,6 +11,7 @@ import { createClient, type MatrixEvent } from "../src/appservice/index.ts";
 import {
   createBoardChat,
   createBoardRooms,
+  gateOffer,
   gateTxnId,
 } from "../src/board-chat/index.ts";
 import type { Store } from "../src/store/index.ts";
@@ -361,6 +362,58 @@ describe("held until a person joins", () => {
     });
     expect(s.store.gateEvent("gte_1")?.postedAt).not.toBeNull();
     expect(s.store.unpostedGates()).toEqual([]);
+    // What it offered is recorded with the claim: an answer is checked against it.
+    expect(s.store.gateEvent("gte_1")?.offer).toEqual({
+      options: [
+        {
+          id: "approve",
+          label: "Approve",
+          meaning: "approve",
+          needs_comment: false,
+        },
+        {
+          id: "request_changes",
+          label: "Request changes",
+          meaning: "revise",
+          needs_comment: true,
+        },
+        {
+          id: "reject",
+          label: "Reject",
+          meaning: "reject",
+          needs_comment: false,
+        },
+      ],
+      subjectId: null,
+      subjectDigest: null,
+      subjectPreviewComplete: null,
+      variants: null,
+      quorum: null,
+    });
+  });
+
+  test("a subject-bound gate's subject and quorum are recorded as its gate.v2 carries them", async () => {
+    const s = setup();
+    await roomWithAnaJoined(s);
+    const gate = deliver(s.store, {
+      approvalSubject: {
+        id: "aps_1",
+        digest: "sha256:1",
+        schema: "x.post.v1",
+        revision: 1,
+        expiresAt: null,
+        preview: [{ type: "text", text: "Hello" }],
+      },
+      quorum: { required: 2, from: "admins", approvals: [] },
+    });
+    expect(await s.chat.post("gte_1")).toMatchObject({ status: "posted" });
+    expect(s.store.gateEvent("gte_1")?.offer).toEqual(gateOffer(gate));
+    expect(s.store.gateEvent("gte_1")?.offer).toMatchObject({
+      subjectId: "aps_1",
+      subjectDigest: "sha256:1",
+      subjectPreviewComplete: true,
+      quorum: { required: 2, from: "admins", approvals: [] },
+    });
   });
 
   test("this service's own join wakes nothing", async () => {

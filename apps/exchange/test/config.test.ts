@@ -14,6 +14,9 @@ const FULL = {
   MATRIX_HS_TOKEN: "hs-token-for-tests",
   TREATY_RELAY_DELIVERY_SECRET: "relay-secret-for-tests",
   SUPEREXCHANGE_OPERATOR_TOKEN_SHA256: "ab".repeat(32),
+  ORG_PLANE_URL: "https://accounts.example",
+  ORG_PLANE_SERVICE_CREDENTIAL: `svc_${"0a".repeat(10)}:plane-secret-for-tests`,
+  SUPERPIPELINE_URL: "https://pipeline.example",
 };
 
 function problems(env: Record<string, string | undefined>): string[] {
@@ -38,7 +41,45 @@ describe("loadConfig", () => {
       dataDir: "/data",
       operatorTokenSha256: "ab".repeat(32),
       plaintextRooms: false,
+      orgPlaneUrl: "https://accounts.example",
+      orgPlaneCredential: {
+        id: `svc_${"0a".repeat(10)}`,
+        secret: "plane-secret-for-tests",
+      },
+      superpipelineUrl: "https://pipeline.example",
     });
+  });
+
+  test("the organization plane and SuperPipeline are http(s) URLs", () => {
+    expect(
+      loadConfig({ ...FULL, SUPERPIPELINE_URL: "http://superpipeline:8787" })
+        .superpipelineUrl,
+    ).toBe("http://superpipeline:8787");
+    expect(
+      problems({
+        ...FULL,
+        ORG_PLANE_URL: "accounts.example",
+        SUPERPIPELINE_URL: "ftp://pipeline.example",
+      }),
+    ).toEqual([
+      "ORG_PLANE_URL is not an http(s) URL",
+      "SUPERPIPELINE_URL is not an http(s) URL",
+    ]);
+  });
+
+  test("the service credential is svc_<20 hex>:<secret>, and nothing else", () => {
+    for (const bad of [
+      "plane-secret-for-tests",
+      `svc_${"0a".repeat(10)}`,
+      `svc_${"0a".repeat(10)}:`,
+      `svc_${"0a".repeat(9)}:plane-secret-for-tests`,
+      `svc_${"0A".repeat(10)}:plane-secret-for-tests`,
+      `svc_${"0a".repeat(10)}:plane secret`,
+    ]) {
+      expect(problems({ ...FULL, ORG_PLANE_SERVICE_CREDENTIAL: bad })).toEqual([
+        "ORG_PLANE_SERVICE_CREDENTIAL is not svc_<20 hex digits>:<secret>",
+      ]);
+    }
   });
 
   test("takes a data directory, and refuses one that is not absolute", () => {
@@ -157,6 +198,9 @@ describe("loadConfig", () => {
       SUPEREXCHANGE_DATA_DIR: "relative/data-dir",
       MATRIX_SERVER_NAME: "prod-homeserver.example",
       SUPEREXCHANGE_PLAINTEXT_ROOMS: "on",
+      ORG_PLANE_URL: "not-a-plane-url",
+      ORG_PLANE_SERVICE_CREDENTIAL: "svc_short:plane-secret-for-tests",
+      SUPERPIPELINE_URL: "not-a-pipeline-url",
     };
     let message = "";
     try {

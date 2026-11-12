@@ -2,7 +2,8 @@
  * The service's own store: one SQLite database (`bun:sqlite`, WAL) in the data directory. It
  * holds what SuperExchange alone knows: the homeserver transactions already applied, the boards
  * an operator has pointed at it, the gates the event relay delivered for them, each board's room
- * and who is in it, and which gates have been posted there.
+ * and who is in it, which gates have been posted there with what they offered, and whether a
+ * person's answer to each has acted and its receipt been posted.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -63,6 +64,14 @@ export const MIGRATIONS: readonly string[] = [
      posted_at TEXT
    );
    CREATE INDEX gate_events_room ON gate_events (room_id);`,
+  `ALTER TABLE gate_events ADD COLUMN options TEXT;
+   ALTER TABLE gate_events ADD COLUMN subject_id TEXT;
+   ALTER TABLE gate_events ADD COLUMN subject_digest TEXT;
+   ALTER TABLE gate_events ADD COLUMN subject_preview_complete INTEGER;
+   ALTER TABLE gate_events ADD COLUMN variants TEXT;
+   ALTER TABLE gate_events ADD COLUMN quorum TEXT;
+   ALTER TABLE gate_events ADD COLUMN outcome_claimed_at TEXT;
+   ALTER TABLE gate_events ADD COLUMN outcome_posted_at TEXT;`,
 ];
 
 export class StoreError extends Error {
@@ -100,6 +109,42 @@ export interface BoardRoom {
   createdAt: string;
 }
 
+/** One option a gate offered when it was posted. */
+export interface GateOfferOption {
+  id: string;
+  label: string;
+  /** What choosing it does: `approve`, `reject`, `revise`, … */
+  meaning: string;
+  needs_comment: boolean;
+}
+
+/** One variant a choice gate offered when it was posted. */
+export interface GateOfferVariant {
+  id: string;
+  label: string;
+  subject_id: string;
+  digest: string;
+  preview_complete: boolean;
+  expires_at: string | null;
+}
+
+/**
+ * What a gate offered when it was posted: an answer is checked against this, never against a
+ * fixed list. Recorded with the claim, before anything is sent.
+ */
+export interface GateOffer {
+  options: GateOfferOption[];
+  /** The subject a subject-bound gate approves; null when it is bound to none. */
+  subjectId: string | null;
+  subjectDigest: string | null;
+  /** Whether the subject's preview was shown in full; null when there is no subject. */
+  subjectPreviewComplete: boolean | null;
+  /** A choice gate's variants; null when it is not a choice. */
+  variants: GateOfferVariant[] | null;
+  /** A quorum gate's quorum as posted (treaty's `quorumV2`), or null when one approval passes it. */
+  quorum: unknown;
+}
+
 /**
  * A gate's claim on its room. A row with no `postedAt` is claimed and not yet (fully) posted:
  * the prose may already have landed (`proseEventId`), the card not.
@@ -112,6 +157,12 @@ export interface GateEvent {
   proseEventId: string | null;
   claimedAt: string;
   postedAt: string | null;
+  /** What the gate offered; null for a gate claimed before offers were recorded. */
+  offer: GateOffer | null;
+  /** Set while, or once, a person's answer is being carried to the board. */
+  outcomeClaimedAt: string | null;
+  /** Set once the receipt is claimed for posting: a gate gets one receipt. */
+  outcomePostedAt: string | null;
 }
 
 /** A delivered gate with no posted event yet. */
@@ -162,15 +213,34 @@ export interface Store {
   membershipOf(roomId: string, userId: string): string | null;
 
   /**
-   * Claim a gate's post into a room. True when this call made the claim; false when the gate
-   * was already claimed (posted or not).
+   * Claim a gate's post into a room, recording what it offers. True when this call made the
+   * claim; false when the gate was already claimed (posted or not), and the offer is not changed.
    */
-  claimGateEvent(gateId: string, boardId: string, roomId: string): boolean;
+  claimGateEvent(
+    gateId: string,
+    boardId: string,
+    roomId: string,
+    offer?: GateOffer,
+  ): boolean;
   gateEvent(gateId: string): GateEvent | null;
   /** Record the prose message's event id, once it has landed. */
   recordGateProse(gateId: string, proseEventId: string): void;
   /** Record the card's event id, and that the gate is posted. */
   recordGatePosted(gateId: string, cardEventId: string): void;
+  /**
+   * Claim a gate's outcome before a person's answer is carried to the board. True when this call
+   * made the claim; false when another answer holds it, or already acted.
+   */
+  claimGateOutcome(gateId: string): boolean;
+  /** Give an outcome claim back, so the next answer may act: the board did not take this one. */
+  releaseGateOutcome(gateId: string): void;
+  /** Claim the gate's receipt before it is sent. True once per gate. */
+  claimGateReceipt(gateId: string): boolean;
+  /**
+   * Give back every outcome claim whose receipt was never claimed: at boot, nothing is carrying
+   * an answer, so such a claim was left by a run that stopped mid-answer. Answers how many.
+   */
+  releaseUnfinishedOutcomes(): number;
   close(): void;
 }
 
@@ -379,12 +449,29 @@ export function openStore(
       return row?.membership ?? null;
     },
 
-    claimGateEvent(gateId, boardId, roomId) {
+    claimGateEvent(gateId, boardId, roomId, offer) {
       const result = db
         .query(
-          "INSERT INTO gate_events (gate_id, board_id, room_id, claimed_at) VALUES (?, ?, ?, ?) ON CONFLICT (gate_id) DO NOTHING",
+          `INSERT INTO gate_events (gate_id, board_id, room_id, claimed_at, options, subject_id,
+             subject_digest, subject_preview_complete, variants, quorum)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (gate_id) DO NOTHING`,
         )
-        .run(gateId, boardId, roomId, stamp());
+        .run(
+          gateId,
+          boardId,
+          roomId,
+          stamp(),
+          offer ? JSON.stringify(offer.options) : null,
+          offer?.subjectId ?? null,
+          offer?.subjectDigest ?? null,
+          offer?.subjectPreviewComplete == null
+            ? null
+            : offer.subjectPreviewComplete
+              ? 1
+              : 0,
+          offer?.variants ? JSON.stringify(offer.variants) : null,
+          offer?.quorum == null ? null : JSON.stringify(offer.quorum),
+        );
       return result.changes === 1;
     },
 
@@ -395,17 +482,7 @@ export function openStore(
           [string]
         >("SELECT * FROM gate_events WHERE gate_id = ?")
         .get(gateId);
-      return row
-        ? {
-            gateId: row.gate_id,
-            boardId: row.board_id,
-            roomId: row.room_id,
-            cardEventId: row.card_event_id,
-            proseEventId: row.prose_event_id,
-            claimedAt: row.claimed_at,
-            postedAt: row.posted_at,
-          }
-        : null;
+      return row ? toGateEvent(row) : null;
     },
 
     recordGateProse(gateId, proseEventId) {
@@ -418,6 +495,38 @@ export function openStore(
       db.query(
         "UPDATE gate_events SET card_event_id = ?, posted_at = ? WHERE gate_id = ?",
       ).run(cardEventId, stamp(), gateId);
+    },
+
+    claimGateOutcome(gateId) {
+      const result = db
+        .query(
+          "UPDATE gate_events SET outcome_claimed_at = ? WHERE gate_id = ? AND outcome_claimed_at IS NULL",
+        )
+        .run(stamp(), gateId);
+      return result.changes === 1;
+    },
+
+    releaseGateOutcome(gateId) {
+      db.query(
+        "UPDATE gate_events SET outcome_claimed_at = NULL WHERE gate_id = ? AND outcome_posted_at IS NULL",
+      ).run(gateId);
+    },
+
+    claimGateReceipt(gateId) {
+      const result = db
+        .query(
+          "UPDATE gate_events SET outcome_posted_at = ? WHERE gate_id = ? AND outcome_posted_at IS NULL",
+        )
+        .run(stamp(), gateId);
+      return result.changes === 1;
+    },
+
+    releaseUnfinishedOutcomes() {
+      return db
+        .query(
+          "UPDATE gate_events SET outcome_claimed_at = NULL WHERE outcome_claimed_at IS NOT NULL AND outcome_posted_at IS NULL",
+        )
+        .run().changes;
     },
 
     close: () => db.close(),
@@ -439,7 +548,46 @@ interface GateEventRow {
   prose_event_id: string | null;
   claimed_at: string;
   posted_at: string | null;
+  options: string | null;
+  subject_id: string | null;
+  subject_digest: string | null;
+  subject_preview_complete: number | null;
+  variants: string | null;
+  quorum: string | null;
+  outcome_claimed_at: string | null;
+  outcome_posted_at: string | null;
 }
+
+const toGateEvent = (row: GateEventRow): GateEvent => ({
+  gateId: row.gate_id,
+  boardId: row.board_id,
+  roomId: row.room_id,
+  cardEventId: row.card_event_id,
+  proseEventId: row.prose_event_id,
+  claimedAt: row.claimed_at,
+  postedAt: row.posted_at,
+  // No options means the gate was claimed before offers were recorded: it offered nothing known.
+  offer:
+    row.options === null
+      ? null
+      : {
+          options: JSON.parse(row.options) as GateOfferOption[],
+          subjectId: row.subject_id,
+          subjectDigest: row.subject_digest,
+          subjectPreviewComplete:
+            row.subject_preview_complete === null
+              ? null
+              : row.subject_preview_complete === 1,
+          variants:
+            row.variants === null
+              ? null
+              : (JSON.parse(row.variants) as GateOfferVariant[]),
+          quorum:
+            row.quorum === null ? null : (JSON.parse(row.quorum) as unknown),
+        },
+  outcomeClaimedAt: row.outcome_claimed_at,
+  outcomePostedAt: row.outcome_posted_at,
+});
 
 const toBoardRoom = (row: BoardRoomRow): BoardRoom => ({
   boardId: row.board_id,

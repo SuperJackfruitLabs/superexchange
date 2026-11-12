@@ -7,6 +7,10 @@
  * - `gates.ts`: the relay's `gate.pending` deliveries, kept for opted-in boards.
  * - `rooms.ts`: each board's room, made once, its people invited, and who has joined it.
  * - `gate-card.ts`: posting a kept gate into its room once a person has joined, exactly once.
+ * - `gate-answer.ts`: a person's answer to a gate card, resolved at SuperPipeline as that person,
+ *   and its receipt, once.
+ * - `accounts.ts`: the organization plane: who a sender is, and the assertion that carries them.
+ * - `superpipeline.ts`: resolving a gate at SuperPipeline with that assertion.
  *
  * Ported from the AgentPod hub's `services/board-chat`. Nothing is encrypted yet: rooms are made
  * and posted into only while `SUPEREXCHANGE_PLAINTEXT_ROOMS` is on, which only a staging
@@ -23,11 +27,33 @@ export {
 export { GATE_PENDING_V1, intakeGate, type GateIntake } from "./gates.ts";
 export {
   createBoardChat,
+  gateOffer,
   gateTxnId,
   type BoardChat,
   type BoardChatDeps,
   type PostOutcome,
 } from "./gate-card.ts";
+export {
+  ALREADY_DECIDED_TEXT,
+  IDENTITY_UNAVAILABLE_TEXT,
+  createGateAnswers,
+  type AnswerOutcome,
+  type GateAnswers,
+  type GateAnswersDeps,
+} from "./gate-answer.ts";
+export {
+  AccountsError,
+  AssertionMismatch,
+  assertionFailureCode,
+  createAccounts,
+  type Accounts,
+  type SenderPrincipal,
+} from "./accounts.ts";
+export {
+  resolveGateAtSuperpipeline,
+  type ResolveInput,
+  type ResolveResult,
+} from "./superpipeline.ts";
 export {
   BOARD_ROOM_NAMES,
   NAMESPACE_USER_PREFIX,

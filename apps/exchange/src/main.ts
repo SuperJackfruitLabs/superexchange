@@ -1,9 +1,17 @@
 /**
  * SuperExchange: the suite's communication server. Reads its settings, opens its store, wires
- * board chat to the transport, then listens, and queues every gate delivered but not yet posted.
+ * board chat to the transport (gate cards out, people's answers to them back), then listens, gives
+ * back any answer a stopped run left unfinished, and queues every gate delivered but not yet
+ * posted.
  */
 import { countEventTypes, createClient } from "./appservice/index.ts";
-import { createBoardChat, createBoardRooms } from "./board-chat/index.ts";
+import {
+  createAccounts,
+  createBoardChat,
+  createBoardRooms,
+  createGateAnswers,
+  resolveGateAtSuperpipeline,
+} from "./board-chat/index.ts";
 import { loadConfig } from "./config.ts";
 import { SERVICE, createHandler } from "./routes/index.ts";
 import { openStore } from "./store/index.ts";
@@ -20,16 +28,36 @@ if (config.plaintextRooms) {
 
 const log = (line: string) => console.log(line);
 const client = createClient(config);
+const rooms = createBoardRooms({
+  store,
+  client,
+  serverName: config.serverName,
+  log,
+});
+const accounts = createAccounts({
+  url: config.orgPlaneUrl,
+  credential: config.orgPlaneCredential,
+});
+const answers = createGateAnswers({
+  store,
+  client,
+  speaker: rooms.speaker,
+  accounts,
+  resolveGate: (input) =>
+    resolveGateAtSuperpipeline(input, {
+      baseUrl: config.superpipelineUrl,
+      // Named for the board that verifies it: SuperPipeline checks `aud` against its own URL.
+      mint: (subject) =>
+        accounts.assert({ ...subject, audience: config.superpipelineUrl }),
+    }),
+  log,
+});
 const boardChat = createBoardChat({
   store,
   client,
-  rooms: createBoardRooms({
-    store,
-    client,
-    serverName: config.serverName,
-    log,
-  }),
+  rooms,
   plaintextRooms: config.plaintextRooms,
+  answers,
   log,
 });
 const countEvents = countEventTypes(log);
