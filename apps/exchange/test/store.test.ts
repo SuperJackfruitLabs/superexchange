@@ -158,7 +158,7 @@ describe("the store", () => {
     expect(store.gateDelivery("g2")).toBeNull();
   });
 
-  test("a database at schema 1 is brought to 2 and keeps its rows", () => {
+  test("a database at schema 1 is brought up to date and keeps its rows", () => {
     const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
     cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
     const db = new Database(join(dir, DATABASE_FILE), { create: true });
@@ -169,7 +169,7 @@ describe("the store", () => {
     db.close();
     const store = openStore(dir);
     cleanups.push(() => store.close());
-    expect(store.schemaVersion()).toBe(2);
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
     expect(store.gateDelivery("g1")).toEqual({ boardId: "brd_a", body: {} });
     expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g1"]);
   });
@@ -226,5 +226,112 @@ describe("the store", () => {
     expect(store.gateEvent("g1")?.postedAt).not.toBeNull();
     expect(store.unpostedGates().map((g) => g.gateId)).toEqual(["g2"]);
     expect(store.gateEvent("g9")).toBeNull();
+  });
+
+  test("a gate claimed at schema 2 reads with no offer and no outcome after migration 3", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 2));
+    db.exec(
+      "INSERT INTO gate_events (gate_id, board_id, room_id, card_event_id, claimed_at, posted_at) VALUES ('g1', 'brd_a', '!r:x', '$card', 't0', 't1')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(store.schemaVersion()).toBe(3);
+    expect(store.gateEvent("g1")).toMatchObject({
+      cardEventId: "$card",
+      offer: null,
+      outcomeClaimedAt: null,
+      outcomePostedAt: null,
+    });
+  });
+
+  test("a gate's offer is recorded with its claim, and a second claim changes nothing", () => {
+    const { store } = fresh();
+    const offer = {
+      options: [
+        {
+          id: "approve_automatic",
+          label: "Post automatically",
+          meaning: "approve",
+          needs_comment: false,
+        },
+        {
+          id: "request_changes",
+          label: "Request changes",
+          meaning: "revise",
+          needs_comment: true,
+        },
+      ],
+      subjectId: "aps_1",
+      subjectDigest: "sha256:1",
+      subjectPreviewComplete: false,
+      variants: null,
+      quorum: { required: 2, from: "admins", approvals: [] },
+    };
+    expect(store.claimGateEvent("g1", "brd_a", "!r:x", offer)).toBe(true);
+    expect(store.gateEvent("g1")?.offer).toEqual(offer);
+    expect(
+      store.claimGateEvent("g1", "brd_a", "!r:x", {
+        ...offer,
+        options: [],
+        subjectId: null,
+      }),
+    ).toBe(false);
+    expect(store.gateEvent("g1")?.offer).toEqual(offer);
+
+    // No subject and no quorum read back as null, not as false or an empty quorum.
+    const plain = {
+      options: [offer.options[0]!],
+      subjectId: null,
+      subjectDigest: null,
+      subjectPreviewComplete: null,
+      variants: [
+        {
+          id: "v1",
+          label: "Short",
+          subject_id: "aps_v1",
+          digest: "sha256:v1",
+          preview_complete: true,
+          expires_at: null,
+        },
+      ],
+      quorum: null,
+    };
+    store.claimGateEvent("g2", "brd_a", "!r:x", plain);
+    expect(store.gateEvent("g2")?.offer).toEqual(plain);
+  });
+
+  test("an outcome is claimed once, given back only before its receipt, and its receipt claimed once", () => {
+    const { store } = fresh();
+    store.claimGateEvent("g1", "brd_a", "!r:x");
+    expect(store.claimGateOutcome("g1")).toBe(true);
+    expect(store.claimGateOutcome("g1")).toBe(false);
+    store.releaseGateOutcome("g1");
+    expect(store.gateEvent("g1")?.outcomeClaimedAt).toBeNull();
+    expect(store.claimGateOutcome("g1")).toBe(true);
+
+    expect(store.claimGateReceipt("g1")).toBe(true);
+    expect(store.claimGateReceipt("g1")).toBe(false);
+    expect(store.gateEvent("g1")?.outcomePostedAt).not.toBeNull();
+    // A gate whose receipt is claimed keeps its outcome: no later answer acts.
+    store.releaseGateOutcome("g1");
+    expect(store.claimGateOutcome("g1")).toBe(false);
+    expect(store.claimGateOutcome("g9")).toBe(false);
+  });
+
+  test("at boot, outcomes claimed without a receipt are given back, and receipted ones kept", () => {
+    const { store } = fresh();
+    for (const g of ["g1", "g2", "g3"])
+      store.claimGateEvent(g, "brd_a", "!r:x");
+    store.claimGateOutcome("g1");
+    store.claimGateOutcome("g2");
+    store.claimGateReceipt("g2");
+    expect(store.releaseUnfinishedOutcomes()).toBe(1);
+    expect(store.gateEvent("g1")?.outcomeClaimedAt).toBeNull();
+    expect(store.gateEvent("g2")?.outcomeClaimedAt).not.toBeNull();
+    expect(store.gateEvent("g3")?.outcomeClaimedAt).toBeNull();
   });
 });
