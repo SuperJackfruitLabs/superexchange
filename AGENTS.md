@@ -10,15 +10,16 @@ its scope are `decisions/2026-11-10-superexchange-owns-the-communication-server.
   through `@superjackfruitlabs/treaty-matrix-events`. A new shape is a treaty change first.
 - **Nothing requires it.** No change here may make SuperPipeline, SuperMessage or AgentPod need
   this service to work.
-- **The layers hold.** `apps/exchange/test/architecture.test.ts`: config < appservice <
+- **The layers hold.** `apps/exchange/test/architecture.test.ts`: config < store < appservice <
   board-chat < routes < main. An import stays in its layer or points down.
 - **A setting's value never reaches a log, an error or a response.**
 - **Every guard has a test that fails when the guard is reverted.**
 
 ## Layout
 
-- `apps/exchange/`: the service. `src/appservice` is the Matrix transport, `src/board-chat` the
-  board work in chat, `src/routes` the HTTP surface.
+- `apps/exchange/`: the service. `src/store` is its SQLite store and migrations,
+  `src/appservice` the Matrix transport, `src/board-chat` the board work in chat, `src/routes`
+  the HTTP surface (relay deliveries, the operator's board API).
 - `deploy/staging/`: the staging deploy, run on the staging host by its forced-command key.
 
 ## Checks
