@@ -1,6 +1,7 @@
 /**
- * The organization plane (Accounts), as a gate answer needs it: who a Matrix sender is, and a
- * short-lived assertion that carries that person to SuperPipeline.
+ * The organization plane (Accounts), as board chat needs it: who a Matrix sender is, a
+ * short-lived assertion that carries that person to SuperPipeline, and this service's own token
+ * for reading boards.
  *
  * Ported from the AgentPod hub's `auth/org-plane/client.ts` (the three calls), `assertion.ts`
  * (the `sub` check and the receipt codes) and the `principalForMatrixId` it wires for gates:
@@ -11,6 +12,9 @@
  * - `POST /api/token/assertion` with `{ identity: { system: "matrix", externalId }, audience }`:
  *   the plane resolves the person itself, so no caller can name whom to assert. The token's `sub`
  *   must be the principal resolved from the same sender, or the answer is refused.
+ * - `POST /api/token/service` with `{ audience }`: this service's own token for SuperPipeline,
+ *   which the gate sweep reads boards with (`gates:read`). Held until shortly before it expires
+ *   (`createServiceTokens`), never logged.
  *
  * Every call carries this service's `svc_` credential as `Authorization: Bearer <id>:<secret>`,
  * and the credential appears nowhere else: not in an error, not in a log. A network failure or a
@@ -66,7 +70,20 @@ export interface Accounts {
     senderMxid: string;
     audience: string;
   }): Promise<string>;
+  /**
+   * How a receipt names a principal (`GET /api/principals/:id`): display name, else handle; null
+   * when the plane knows no such principal, or the id is not one. Throws `AccountsError` when the
+   * plane cannot say.
+   */
+  principalLabel(principalId: string): Promise<string | null>;
+  /** This service's own token for `audience`. Throws `AccountsError` when it cannot be had. */
+  serviceToken(
+    audience: string,
+  ): Promise<{ accessToken: string; expiresIn: number }>;
 }
+
+/** A principal id as the plane writes one; anything else names nobody and is not asked about. */
+const PRINCIPAL_ID = /^prn_[A-Za-z0-9_-]{1,64}$/;
 
 export interface AccountsDeps {
   url: string;
@@ -135,6 +152,28 @@ export function createAccounts(deps: AccountsDeps): Accounts {
     );
   }
 
+  /** A principal's kind and label, or null when the plane knows no such principal. */
+  async function principal(
+    principalId: string,
+  ): Promise<{ kind: string; label: string | null } | null> {
+    const found = ok(
+      await call("GET", `/api/principals/${enc(principalId)}`),
+      true,
+    );
+    if (found === null) return null;
+    const kind = field(found, "kind");
+    if (typeof kind !== "string") {
+      throw new AccountsError(200, "malformed_response");
+    }
+    const displayName = field(found, "displayName");
+    const handle = field(found, "handle");
+    const label =
+      (typeof displayName === "string" ? displayName.trim() : "") ||
+      (typeof handle === "string" ? handle : "") ||
+      null;
+    return { kind, label };
+  }
+
   return {
     async principalForMatrixId(mxid) {
       const identity = ok(
@@ -146,22 +185,29 @@ export function createAccounts(deps: AccountsDeps): Accounts {
       if (typeof principalId !== "string" || principalId === "") {
         throw new AccountsError(200, "malformed_response");
       }
-      const principal = ok(
-        await call("GET", `/api/principals/${enc(principalId)}`),
-        true,
-      );
-      if (principal === null) return null;
-      const kind = field(principal, "kind");
-      if (typeof kind !== "string") {
+      const found = await principal(principalId);
+      return found === null ? null : { id: principalId, ...found };
+    },
+
+    async principalLabel(principalId) {
+      if (!PRINCIPAL_ID.test(principalId)) return null;
+      return (await principal(principalId))?.label ?? null;
+    },
+
+    async serviceToken(audience) {
+      const answer = ok(await call("POST", "/api/token/service", { audience }));
+      const accessToken = field(answer, "access_token");
+      const expiresIn = field(answer, "expires_in");
+      if (
+        typeof accessToken !== "string" ||
+        accessToken === "" ||
+        typeof expiresIn !== "number" ||
+        !Number.isFinite(expiresIn) ||
+        expiresIn <= 0
+      ) {
         throw new AccountsError(200, "malformed_response");
       }
-      const displayName = field(principal, "displayName");
-      const handle = field(principal, "handle");
-      const label =
-        (typeof displayName === "string" ? displayName.trim() : "") ||
-        (typeof handle === "string" ? handle : "") ||
-        null;
-      return { id: principalId, kind, label };
+      return { accessToken, expiresIn };
     },
 
     async assert({ principalId, senderMxid, audience }) {
@@ -215,4 +261,59 @@ export function assertionFailureCode(
       : "ASSERTION_REFUSED";
   }
   return null;
+}
+
+/** How long before its expiry a held service token is replaced. */
+export const SERVICE_TOKEN_MARGIN_MS = 60_000;
+
+/** This service's token for one audience, held until shortly before it expires. */
+export interface ServiceTokens {
+  /** The held token, or a new one when none is held or it is about to expire. */
+  get(): Promise<string>;
+  /** Drop the held token: the audience refused it, so the next `get` asks for a new one. */
+  invalidate(): void;
+}
+
+/**
+ * Hold this service's token for `audience` until `SERVICE_TOKEN_MARGIN_MS` before it expires
+ * (or half its life, when that is shorter). Callers at the same moment share one request; a
+ * failed request holds nothing, so the next call asks again.
+ */
+export function createServiceTokens(deps: {
+  accounts: Pick<Accounts, "serviceToken">;
+  audience: string;
+  now?: () => number;
+}): ServiceTokens {
+  const now = deps.now ?? Date.now;
+  let held: { token: string; renewAt: number } | null = null;
+  let asking: Promise<string> | null = null;
+
+  return {
+    get() {
+      if (held !== null && now() < held.renewAt) {
+        return Promise.resolve(held.token);
+      }
+      asking ??= (async () => {
+        try {
+          const asked = now();
+          const { accessToken, expiresIn } = await deps.accounts.serviceToken(
+            deps.audience,
+          );
+          const lifeMs = expiresIn * 1000;
+          held = {
+            token: accessToken,
+            renewAt:
+              asked + lifeMs - Math.min(SERVICE_TOKEN_MARGIN_MS, lifeMs / 2),
+          };
+          return accessToken;
+        } finally {
+          asking = null;
+        }
+      })();
+      return asking;
+    },
+    invalidate() {
+      held = null;
+    },
+  };
 }

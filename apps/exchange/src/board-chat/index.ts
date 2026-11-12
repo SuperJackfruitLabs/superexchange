@@ -12,8 +12,14 @@
  *   and the way in, encrypted events decrypted (or parked until their key arrives) and read.
  * - `gate-answer.ts`: a person's answer to a gate card, resolved at SuperPipeline as that person,
  *   and its receipt, once.
- * - `accounts.ts`: the organization plane: who a sender is, and the assertion that carries them.
- * - `superpipeline.ts`: resolving a gate at SuperPipeline with that assertion.
+ * - `gate-receipt.ts`: a gate's receipt, once, whether it was answered in chat or decided
+ *   elsewhere.
+ * - `gate-sweep.ts`: asking each board what it still waits on: gates the relay missed are posted,
+ *   gates decided elsewhere settled.
+ * - `accounts.ts`: the organization plane: who a sender is, the assertion that carries them, and
+ *   this service's own token for reading boards.
+ * - `superpipeline.ts`: resolving a gate at SuperPipeline with that assertion, and reading a
+ *   board's gates with that token.
  *
  * Ported from the AgentPod hub's `services/board-chat`. Board rooms are end-to-end encrypted with
  * the speaker's own keys (`appservice/crypto.ts`); `SUPEREXCHANGE_PLAINTEXT_ROOMS`, staging only,
@@ -47,17 +53,38 @@ export {
   type GateAnswersDeps,
 } from "./gate-answer.ts";
 export {
+  sendGateReceipt,
+  settleGate,
+  type GateDecided,
+  type SettleOutcome,
+} from "./gate-receipt.ts";
+export {
+  SWEEP_MAX_BACKOFF,
+  startGateSweep,
+  sweepGates,
+  type GateSweepDeps,
+  type GateSweepResult,
+  type GateSweeper,
+} from "./gate-sweep.ts";
+export {
   AccountsError,
   AssertionMismatch,
+  SERVICE_TOKEN_MARGIN_MS,
   assertionFailureCode,
   createAccounts,
+  createServiceTokens,
   type Accounts,
   type SenderPrincipal,
+  type ServiceTokens,
 } from "./accounts.ts";
 export {
+  SuperpipelineError,
+  createSuperpipelineReads,
   resolveGateAtSuperpipeline,
+  type BoardGate,
   type ResolveInput,
   type ResolveResult,
+  type SuperpipelineReads,
 } from "./superpipeline.ts";
 export {
   BOARD_ROOM_NAMES,

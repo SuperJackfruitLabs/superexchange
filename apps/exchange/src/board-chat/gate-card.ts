@@ -28,7 +28,9 @@
  *    sends only the card.
  *
  * Posts run one at a time, in arrival order, off the request that caused them: neither the relay
- * nor the homeserver's transaction waits on a post.
+ * nor the homeserver's transaction waits on a post. A gate the board says was decided elsewhere
+ * is settled in the same queue (`gate-receipt.ts`), so settling never runs beside an answer to
+ * the same gate; a settled gate is never posted. A gate held for a join is logged once.
  *
  * The way in: an encrypted event in a board room, from a person, is decrypted before anything
  * reads it (the hub's `asPlaintext`), then read like any other: a gate answer is carried. One
@@ -60,6 +62,11 @@ import {
 } from "../appservice/index.ts";
 import type { BoardRoom, GateOffer, Store } from "../store/index.ts";
 import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
+import {
+  settleGate,
+  type GateDecided,
+  type SettleOutcome,
+} from "./gate-receipt.ts";
 import type { RoomRefusal, RoomSender } from "./room-sender.ts";
 import { describe, type BoardRooms } from "./rooms.ts";
 
@@ -124,6 +131,7 @@ export type PostOutcome =
       status: "skipped";
       reason:
         | "not delivered"
+        | "settled"
         | "not a gate"
         | "board not opted in"
         | "board disabled";
@@ -146,6 +154,8 @@ export interface BoardChatDeps {
     | "parkPendingDecrypt"
     | "pendingDecrypts"
     | "claimPendingDecrypt"
+    | "settleGateEvent"
+    | "settleGateDelivery"
   >;
   /** Speaks in board rooms, encrypted where the room is (`room-sender.ts`). */
   sender: RoomSender;
@@ -171,6 +181,11 @@ export interface BoardChat {
    * gates.
    */
   onEvents: EventsHandler;
+  /**
+   * Settle a gate the board says was decided elsewhere, queued behind every post and answer
+   * before it: its receipt once if it is in a room, and never posted if it is not.
+   */
+  settle(gateId: string, decided: GateDecided): Promise<SettleOutcome>;
   /** Carry one answer, queued behind every post and answer before it. */
   answer(event: MatrixEvent): Promise<AnswerOutcome | null>;
   /**
@@ -186,6 +201,8 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   const { store, sender, rooms, log } = deps;
   const now = deps.now ?? (() => new Date());
   const refusedBoards = new Set<string>();
+  /** Gates whose hold has been logged: the sweep offers a held gate again every pass. */
+  const heldLogged = new Set<string>();
   let queue: Promise<unknown> = Promise.resolve();
 
   function enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -199,6 +216,9 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     const delivery = store.gateDelivery(gateId);
     if (delivery === null)
       return { status: "skipped", reason: "not delivered" };
+    // Decided on the board before it was posted: never posted after.
+    if (delivery.settledAt !== null)
+      return { status: "skipped", reason: "settled" };
     const gate = delivery.body;
     if (!isGatePending(gate))
       return { status: "skipped", reason: "not a gate" };
@@ -253,9 +273,12 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
       }
       try {
         if (!(await rooms.personJoined(roomId))) {
-          log(
-            `board-chat: gate ${JSON.stringify(gateId)} held until a person joins the room of ${board.boardId}`,
-          );
+          if (!heldLogged.has(gateId)) {
+            heldLogged.add(gateId);
+            log(
+              `board-chat: gate ${JSON.stringify(gateId)} held until a person joins the room of ${board.boardId}`,
+            );
+          }
           return { status: "held", roomId };
         }
       } catch (error) {
@@ -409,8 +432,18 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     });
   }
 
+  const settle = (gateId: string, decided: GateDecided) =>
+    enqueue(() =>
+      settleGate(
+        { store, sender, speaker: rooms.speaker, log, describe },
+        gateId,
+        decided,
+      ),
+    );
+
   return {
     post,
+    settle,
     gateAccepted: (gateId) => void post(gateId),
     answer,
     retryPending,

@@ -34,9 +34,6 @@
  * stranger or an agent can never make this service speak.
  */
 import {
-  GATE_OUTCOME_TYPE,
-  gateOutcomeBody,
-  gateOutcomeContent,
   parseGateDecision,
   type ParsedGateDecision,
 } from "@superjackfruitlabs/treaty-matrix-events";
@@ -52,7 +49,7 @@ import {
   type Accounts,
   type SenderPrincipal,
 } from "./accounts.ts";
-import { gateTxnId } from "./gate-card.ts";
+import { sendGateReceipt, type GateDecided } from "./gate-receipt.ts";
 import {
   NAMESPACE_USER_PREFIX,
   describe as describeClientError,
@@ -311,32 +308,12 @@ export function createGateAnswers(deps: GateAnswersDeps): GateAnswers {
    */
   async function postReceipt(
     gate: GateEvent,
-    decided: {
-      decision: string;
-      decidedBy: string | null;
-      chosen: { id: string; label: string } | null;
-    },
+    decided: GateDecided,
   ): Promise<void> {
+    // The same claim the sweep's settling takes (`settleGateEvent`): one receipt per gate.
     if (!store.claimGateReceipt(gate.gateId)) return;
     try {
-      await say(
-        gate.roomId,
-        gateTxnId(gate.gateId, "outcome.prose"),
-        gateOutcomeBody(decided),
-      );
-      await deps.client.sendEvent(
-        deps.speaker,
-        gate.roomId,
-        GATE_OUTCOME_TYPE,
-        gateTxnId(gate.gateId, "outcome.card"),
-        gateOutcomeContent({
-          ...decided,
-          gateId: gate.gateId,
-          boardId: gate.boardId,
-          // The card is what a client draws buttons from: the receipt points at it.
-          gateEventId: gate.cardEventId ?? gate.proseEventId ?? "",
-        }),
-      );
+      await sendGateReceipt(deps.client, deps.speaker, gate, decided);
     } catch (error) {
       log(
         `board-chat: gate ${JSON.stringify(gate.gateId)} resolved, and its receipt could not be posted (${describe(error)})`,
