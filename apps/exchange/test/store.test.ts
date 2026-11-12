@@ -551,3 +551,85 @@ describe("migration 6: board questions", () => {
     ).toEqual(["q2", "q1"]);
   });
 });
+
+describe("migration 7: follow-ups and waiting cards", () => {
+  test("a database at version 6 takes them, and keeps what it had", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 6));
+    db.exec(
+      "INSERT INTO question_deliveries (elicitation_id, board_id, received_at, body) VALUES ('q1', 'brd_a', 't0', '{}')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(store.schemaVersion()).toBe(7);
+    expect(store.questionDelivery("q1")?.boardId).toBe("brd_a");
+    expect(store.recordFollowupDelivery("g1", "brd_a", { a: 1 })).toBe(true);
+    expect(
+      store.recordAttentionDelivery(
+        { boardId: "brd_a", cardId: "c1", waitId: "w1" },
+        { a: 1 },
+      ),
+    ).toBe(true);
+  });
+
+  const offer = {
+    options: [{ id: "record_live_url", label: "Record" }],
+    subjectPreviewComplete: true,
+  };
+
+  test("a follow-up is recorded once, claimed once, and has one receipt whoever claims it", () => {
+    const { store } = fresh();
+    expect(store.recordFollowupDelivery("g1", "brd_a", { n: 1 })).toBe(true);
+    expect(store.recordFollowupDelivery("g1", "brd_a", { n: 2 })).toBe(false);
+    expect(store.followupDelivery("g1")?.body).toEqual({ n: 1 });
+    expect(store.unpostedFollowups("brd_a").map((f) => f.gateId)).toEqual([
+      "g1",
+    ]);
+    expect(store.claimFollowupEvent("g1", "brd_a", "c1", "!r:x", offer)).toBe(
+      true,
+    );
+    expect(
+      store.claimFollowupEvent("g1", "brd_a", "c1", "!r:y", {
+        options: [],
+        subjectPreviewComplete: false,
+      }),
+    ).toBe(false);
+    expect(store.followupEvent("g1")?.offer).toEqual(offer);
+    // Claimed and not posted: no receipt to claim.
+    expect(store.claimFollowupReceipt("g1")).toBe(false);
+    expect(store.settleFollowupEvent("g1")).toBe(false);
+    store.recordFollowupPosted("g1", "$e1");
+    expect(store.unpostedFollowups()).toEqual([]);
+    expect(store.claimFollowupReceipt("g1")).toBe(true);
+    expect(store.claimFollowupReceipt("g1")).toBe(false);
+    expect(store.settleFollowupEvent("g1")).toBe(false);
+    expect(store.postedFollowupsAwaitingOutcome("brd_a")).toEqual([]);
+    expect(store.settleFollowupDelivery("g1")).toBe(true);
+    expect(store.settleFollowupDelivery("g1")).toBe(false);
+  });
+
+  test("a waiting card is keyed by its wait: the same card parked again is another", () => {
+    const { store } = fresh();
+    const a = { boardId: "brd_a", cardId: "c1", waitId: "w1" };
+    const b = { ...a, waitId: "w2" };
+    expect(store.recordAttentionDelivery(a, {})).toBe(true);
+    expect(store.recordAttentionDelivery(a, {})).toBe(false);
+    expect(store.recordAttentionDelivery(b, {})).toBe(true);
+    const opts = [{ id: "archive", label: "Archive" }];
+    expect(store.claimAttentionEvent(a, "!r:x", opts)).toBe(true);
+    expect(store.claimAttentionEvent(a, "!r:x", [])).toBe(false);
+    store.recordAttentionPosted(a, "$a");
+    expect(store.unpostedAttention("brd_a").map((x) => x.waitId)).toEqual([
+      "w2",
+    ]);
+    expect(store.attentionEvent(a)?.options).toEqual(opts);
+    expect(store.settleAttentionEvent(a)).toBe(true);
+    expect(store.claimAttentionReceipt(a)).toBe(false);
+    expect(store.attentionEvent(a)?.settledAt).not.toBeNull();
+    expect(store.attentionEvent(b)).toBeNull();
+    expect(store.postedAttentionAwaitingOutcome("brd_a")).toEqual([]);
+  });
+});

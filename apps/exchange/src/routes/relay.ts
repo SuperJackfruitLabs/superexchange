@@ -8,13 +8,13 @@
  *
  * - not a CloudEvent: 400, before the signature is checked (there is no id to check it over);
  * - a bad, stale or missing signature: 401;
- * - any type but `gate.pending` v1 and `elicitation.pending` v1: 200 `{status:"ignored"}`, so the
- *   relay does not retry what this build will never handle;
- * - a `gate.pending` whose data is not a gate, or an `elicitation.pending` whose data is not a
- *   question: 400;
- * - a gate or question for an opted-in, enabled board: recorded once, 200 `{status:"accepted"}`,
- *   and handed to board chat to post (a redelivery too: one not yet posted is tried again);
- * - a gate or question for any other board, and an approval request for a board outside this
+ * - any type but `gate.pending`, `elicitation.pending`, `delivery.pending` and `attention.pending`
+ *   (all v1): 200 `{status:"ignored"}`, so the relay does not retry what this build will never
+ *   handle;
+ * - a body that is not what its type says (a gate, a question, a follow-up, a waiting card): 400;
+ * - one for an opted-in, enabled board: recorded once, 200 `{status:"accepted"}`, and handed to
+ *   board chat to post (a redelivery too: one not yet posted is tried again);
+ * - one for any other board, and an approval request for a board outside this
  *   service's workspace (`approvalRequestAllowed`; absent, none is kept): 200 `{status:"ignored"}`.
  */
 import {
@@ -23,13 +23,17 @@ import {
   verifyDelivery,
 } from "@superjackfruitlabs/treaty-cloudevents";
 import {
+  ATTENTION_PENDING_V1,
+  DELIVERY_PENDING_V1,
   ELICITATION_PENDING_V1,
   GATE_PENDING_V1,
+  intakeAttention,
+  intakeFollowup,
   intakeGate,
   intakeQuestion,
   type ApprovalRequestAllowed,
 } from "../board-chat/index.ts";
-import type { Store } from "../store/index.ts";
+import type { Store, WaitKey } from "../store/index.ts";
 import { readBody, tooLarge } from "./body.ts";
 
 export const RELAY_EVENTS_PATH = "/v1/relay/events";
@@ -42,13 +46,21 @@ export interface RelayDeps {
   secret: string;
   store: Pick<
     Store,
-    "getBoard" | "recordGateDelivery" | "recordQuestionDelivery"
+    | "getBoard"
+    | "recordGateDelivery"
+    | "recordQuestionDelivery"
+    | "recordFollowupDelivery"
+    | "recordAttentionDelivery"
   >;
   log?: (line: string) => void;
   /** Told of each accepted gate (new or redelivered), to post it. Must not throw or wait. */
   onGateAccepted?: (gateId: string) => void;
   /** Told of each accepted question (new or redelivered), to post it. Must not throw or wait. */
   onQuestionAccepted?: (elicitationId: string) => void;
+  /** Told of each accepted follow-up (new or redelivered), to post it. Must not throw or wait. */
+  onFollowupAccepted?: (gateId: string) => void;
+  /** Told of each accepted waiting card (new or redelivered), to post it. Must not throw or wait. */
+  onAttentionAccepted?: (key: WaitKey) => void;
   /** May an approval request on this board be kept? Absent: never. */
   approvalRequestAllowed?: ApprovalRequestAllowed;
   /** Test seam for the signature's clock. */
@@ -87,7 +99,12 @@ export function createRelayHandler(deps: RelayDeps) {
     }
 
     const type = attributes.type;
-    if (type !== GATE_PENDING_V1 && type !== ELICITATION_PENDING_V1) {
+    if (
+      type !== GATE_PENDING_V1 &&
+      type !== ELICITATION_PENDING_V1 &&
+      type !== DELIVERY_PENDING_V1 &&
+      type !== ATTENTION_PENDING_V1
+    ) {
       return Response.json({ status: "ignored" });
     }
 
@@ -98,6 +115,36 @@ export function createRelayHandler(deps: RelayDeps) {
       return Response.json({ error: "not JSON" }, { status: 400 });
     }
 
+    if (type === DELIVERY_PENDING_V1) {
+      const intake = intakeFollowup(deps.store, body);
+      if (intake.status === "invalid") {
+        log(`relay: event ${JSON.stringify(id)} refused: not a follow-up`);
+        return Response.json({ error: "not a follow-up" }, { status: 400 });
+      }
+      if (intake.status === "ignored") {
+        return Response.json({ status: "ignored" });
+      }
+      log(
+        `relay: follow-up ${JSON.stringify(intake.gateId)} for ${intake.boardId} ${intake.duplicate ? "already recorded" : "recorded"}`,
+      );
+      deps.onFollowupAccepted?.(intake.gateId);
+      return Response.json({ status: "accepted" });
+    }
+    if (type === ATTENTION_PENDING_V1) {
+      const intake = intakeAttention(deps.store, body);
+      if (intake.status === "invalid") {
+        log(`relay: event ${JSON.stringify(id)} refused: not a waiting card`);
+        return Response.json({ error: "not a waiting card" }, { status: 400 });
+      }
+      if (intake.status === "ignored") {
+        return Response.json({ status: "ignored" });
+      }
+      log(
+        `relay: waiting card ${JSON.stringify(intake.key.cardId)} (wait ${JSON.stringify(intake.key.waitId)}) for ${intake.key.boardId} ${intake.duplicate ? "already recorded" : "recorded"}`,
+      );
+      deps.onAttentionAccepted?.(intake.key);
+      return Response.json({ status: "accepted" });
+    }
     if (type === ELICITATION_PENDING_V1) {
       const intake = await intakeQuestion(
         deps.store,

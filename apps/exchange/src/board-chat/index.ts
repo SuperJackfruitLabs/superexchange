@@ -24,11 +24,21 @@
  * - `question-answer.ts`: a person's answer to a question (question.answer.v2, or a typed reply),
  *   carried to SuperPipeline as that person, and its receipt, once.
  * - `question-sweep.ts`: asking each board which questions it still waits on.
+ * - `followups.ts`, `attention.ts`: the relay's `delivery.pending` (a manual delivery's follow-up)
+ *   and `attention.pending` (a card waiting on a person), kept for opted-in boards.
+ * - `card-post.ts`: posting one single-event card, held, claimed and sent once.
+ * - `followup-card.ts`, `attention-card.ts`: posting a follow-up or a waiting card, and its one
+ *   receipt, whether answered in chat or settled on the board.
+ * - `card-answer.ts`: what every answer to such a card shares (a person, in a board room here).
+ * - `followup-answer.ts`, `attention-answer.ts`: delivery.answer.v2 and attention.answer.v2,
+ *   carried to SuperPipeline as the person who answered.
+ * - `followup-sweep.ts`, `attention-sweep.ts`: asking each board which follow-ups it is still
+ *   owed and which cards still wait.
  * - `sweeper.ts`: running a sweep on its interval, backing off while every board fails.
  * - `accounts.ts`: the organization plane: who a sender is, the assertion that carries them, and
  *   this service's own token for reading boards.
- * - `superpipeline.ts`: resolving a gate at SuperPipeline with that assertion, and reading a
- *   board's gates with that token.
+ * - `superpipeline.ts`: resolving a gate, answering a question, a follow-up or a waiting card at
+ *   SuperPipeline with that assertion, and reading a board's pending work with that token.
  *
  * Ported from the AgentPod hub's `services/board-chat`. Board rooms are end-to-end encrypted with
  * the speaker's own keys (`appservice/crypto.ts`); `SUPEREXCHANGE_PLAINTEXT_ROOMS`, staging only,
@@ -100,6 +110,57 @@ export {
   type QuestionSweeper,
 } from "./question-sweep.ts";
 export {
+  DELIVERY_PENDING_V1,
+  intakeFollowup,
+  type FollowupIntake,
+} from "./followups.ts";
+export {
+  ATTENTION_PENDING_V1,
+  intakeAttention,
+  waitKeyOf,
+  type AttentionIntake,
+} from "./attention.ts";
+export {
+  followupOffer,
+  followupReceiptBody,
+  followupTxnId,
+  type FollowupPostOutcome,
+  type FollowupSettleOutcome,
+} from "./followup-card.ts";
+export {
+  attentionOffer,
+  attentionReceiptBody,
+  attentionTxnId,
+  type AttentionPostOutcome,
+  type AttentionSettleOutcome,
+} from "./attention-card.ts";
+export {
+  FOLLOWUP_REFUSAL_TEXT,
+  createFollowupAnswers,
+  type FollowupAnswerOutcome,
+  type FollowupAnswers,
+  type FollowupAnswersDeps,
+} from "./followup-answer.ts";
+export {
+  WAIT_CHANGED_TEXT,
+  createAttentionAnswers,
+  type AttentionAnswerOutcome,
+  type AttentionAnswers,
+  type AttentionAnswersDeps,
+} from "./attention-answer.ts";
+export {
+  startFollowupSweep,
+  sweepFollowups,
+  type FollowupSweepDeps,
+  type FollowupSweepResult,
+} from "./followup-sweep.ts";
+export {
+  startAttentionSweep,
+  sweepAttention,
+  type AttentionSweepDeps,
+  type AttentionSweepResult,
+} from "./attention-sweep.ts";
+export {
   SWEEP_MAX_BACKOFF,
   startGateSweep,
   sweepGates,
@@ -120,10 +181,15 @@ export {
 } from "./accounts.ts";
 export {
   SuperpipelineError,
+  answerAttentionAtSuperpipeline,
+  answerFollowupAtSuperpipeline,
   answerQuestionAtSuperpipeline,
   createSuperpipelineReads,
   resolveGateAtSuperpipeline,
+  type AttentionAction,
+  type AttentionAnswerInput,
   type BoardGate,
+  type FollowupAnswerInput,
   type QuestionAnswerInput,
   type ResolveInput,
   type ResolveResult,

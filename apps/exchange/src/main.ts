@@ -1,10 +1,11 @@
 /**
  * SuperExchange: the suite's communication server. Reads its settings, opens its store, builds
- * the speaker's encryption (its device and keys), wires board chat to the transport (gate cards
- * and questions out, people's answers to them back), then listens, gives back any answer a
- * stopped run left unfinished, queues every gate and question delivered but not yet posted, tries
- * again every encrypted event still waiting for its key, and starts the gate and question sweeps
- * (once now, then every `SUPEREXCHANGE_SWEEP_SECONDS`).
+ * the speaker's encryption (its device and keys), wires board chat to the transport (gate cards,
+ * questions, follow-ups and waiting cards out, people's answers to them back), then listens,
+ * gives back any answer a stopped run left unfinished, queues every card delivered but not yet
+ * posted, tries again every encrypted event still waiting for its key, and starts the gate,
+ * question, follow-up and waiting-card sweeps (once now, then every
+ * `SUPEREXCHANGE_SWEEP_SECONDS`).
  */
 import { join } from "node:path";
 import {
@@ -14,11 +15,15 @@ import {
   createSpeakerCrypto,
 } from "./appservice/index.ts";
 import {
+  answerAttentionAtSuperpipeline,
+  answerFollowupAtSuperpipeline,
   answerQuestionAtSuperpipeline,
   createAccounts,
   createApprovalScope,
+  createAttentionAnswers,
   createBoardChat,
   createBoardRooms,
+  createFollowupAnswers,
   createGateAnswers,
   createQuestionAnswers,
   createRoomSender,
@@ -26,6 +31,8 @@ import {
   createSuperpipelineReads,
   describe,
   resolveGateAtSuperpipeline,
+  startAttentionSweep,
+  startFollowupSweep,
   startGateSweep,
   startQuestionSweep,
 } from "./board-chat/index.ts";
@@ -102,6 +109,30 @@ const questions = createQuestionAnswers({
     }),
   log,
 });
+const followups = createFollowupAnswers({
+  store,
+  client: sender,
+  speaker: rooms.speaker,
+  accounts,
+  answerFollowup: (input) =>
+    answerFollowupAtSuperpipeline(input, {
+      baseUrl: config.superpipelineUrl,
+      mint,
+    }),
+  log,
+});
+const attention = createAttentionAnswers({
+  store,
+  client: sender,
+  speaker: rooms.speaker,
+  accounts,
+  answerAttention: (input) =>
+    answerAttentionAtSuperpipeline(input, {
+      baseUrl: config.superpipelineUrl,
+      mint,
+    }),
+  log,
+});
 const boardChat = createBoardChat({
   store,
   sender,
@@ -109,6 +140,8 @@ const boardChat = createBoardChat({
   crypto,
   answers,
   questions,
+  followups,
+  attention,
   log,
 });
 // This service's own token, for reading only: SuperPipeline checks `aud` against its URL. One
@@ -153,6 +186,8 @@ const server = Bun.serve({
     },
     onGateAccepted: boardChat.gateAccepted,
     onQuestionAccepted: boardChat.questionAccepted,
+    onFollowupAccepted: boardChat.followupAccepted,
+    onAttentionAccepted: boardChat.attentionAccepted,
     approvalRequestAllowed,
     log,
   }),
@@ -185,9 +220,22 @@ const questionSweep = startQuestionSweep(
   { intervalMs: config.sweepSeconds * 1000 },
 );
 
+// Both read routes SuperPipeline does not yet admit a service token on: until it does, every
+// board is unreadable there, nothing is settled, and each sweep backs off on its own.
+const followupSweep = startFollowupSweep(
+  { store, board: reads, chat: boardChat, log },
+  { intervalMs: config.sweepSeconds * 1000 },
+);
+const attentionSweep = startAttentionSweep(
+  { store, board: reads, chat: boardChat, log },
+  { intervalMs: config.sweepSeconds * 1000 },
+);
+
 async function shutdown() {
   sweep.stop();
   questionSweep.stop();
+  followupSweep.stop();
+  attentionSweep.stop();
   await server.stop();
   // Before exit: an encryption machine open at exit aborts the process.
   await crypto?.close();
