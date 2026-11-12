@@ -119,6 +119,33 @@ curl http://127.0.0.1:8080/healthz
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 
+## Production
+
+A `vX.Y.Z` tag on main deploys production (`release.yml` in the GitHub workflows, on the GitHub
+mirror only): after `bun run check` passes, the production host runs that tag's
+`deploy/production/release.sh` through its forced-command deploy key. Only the operator pushes
+tags. The workflow does nothing until the mirror has the `PROD_HOST` variable and the
+`PROD_SSH_KEY` and `PROD_KNOWN_HOSTS` secrets.
+
+`release.sh` builds the tag's image, recreates the service (`deploy/production/compose.yml`),
+waits for `/healthz` and checks that the service reaches the homeserver. If the release fails
+those checks, the release that ran before is put back. Before each release it takes an online
+copy of the store; on a rollback it restores that copy when the new build had moved the schema,
+because a build refuses a database written by a newer one.
+
+| What           | Where                                                                                    |
+| -------------- | ---------------------------------------------------------------------------------------- |
+| Settings       | `/etc/superexchange/superexchange.env`, written by the host's provisioning               |
+| Store          | `/var/lib/superexchange` on the host, mounted at `/data`, owned by the image's `bun`     |
+| Crypto store   | `/var/lib/superexchange/crypto/`: back it up with the database                           |
+| Listens        | `127.0.0.1:8795`: the homeserver's registration url and the operator's board API         |
+| Relay delivery | as `superexchange` on the event relay's network (`treaty_relay`): deploy the relay first |
+| Homeserver     | at its public name (`MATRIX_HOMESERVER_URL`), which the container resolves to the host   |
+| Deployed tag   | `/etc/superexchange/deployed`                                                            |
+
+`SUPEREXCHANGE_PLAINTEXT_ROOMS` is forced `off` in the production compose file, and the service
+refuses it on a homeserver whose name does not start with `staging-` regardless.
+
 ## Checks
 
 `bun run check` runs what CI runs: format, typecheck, lint and tests.
