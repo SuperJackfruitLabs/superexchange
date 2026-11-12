@@ -471,6 +471,15 @@ describe("a person's answer", () => {
     );
   });
 
+  test("a gate whose receipt was already posted gets no second one", async () => {
+    const s = setup();
+    s.posted();
+    s.store.claimGateReceipt("gte_1");
+    expect(await s.chat.answer(answer())).toEqual({ status: "resolved" });
+    expect(s.board.resolves).toHaveLength(1);
+    expect(s.said()).toEqual([]);
+  });
+
   test("an answer left unfinished by a stopped run is given back at boot", async () => {
     const s = setup();
     s.posted();
@@ -500,7 +509,10 @@ describe("who may answer", () => {
   test("a sender linked to nobody is ignored", async () => {
     const s = setup();
     s.posted();
-    await s.deliver(answer({ sender: STRANGER }));
+    expect(await s.chat.answer(answer({ sender: STRANGER }))).toEqual({
+      status: "refused",
+      reason: "unlinked-sender",
+    });
     expect(s.plane.assertions()).toEqual([]);
     expect(s.board.resolves).toEqual([]);
     expect(s.said()).toEqual([]);
@@ -640,6 +652,18 @@ describe("what is not an answer to a gate posted here", () => {
     expect(s.plane.calls).toEqual([]);
     expect(s.board.resolves).toEqual([]);
     expect(s.said()).toEqual([]);
+  });
+
+  test("an answer in a room that is not a board room is ignored, even for a gate recorded there", async () => {
+    const s = setup();
+    const room = `!not-a-board-room:${SERVER}`;
+    s.posted("gte_1", gateOffer(GATE), { roomId: room });
+    expect(await s.chat.answer(answer({ room }))).toEqual({
+      status: "ignored",
+      reason: "not-a-board-room",
+    });
+    expect(s.plane.calls).toEqual([]);
+    expect(s.board.resolves).toEqual([]);
   });
 
   test("an answer on a board no longer opted in is ignored", async () => {
