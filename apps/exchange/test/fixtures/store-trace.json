@@ -1,0 +1,2402 @@
+{
+ "methods": [
+  "attentionDelivery",
+  "attentionEvent",
+  "boardRoom",
+  "boardRoomByRoomId",
+  "checksWaiting",
+  "checksWaitingByEvent",
+  "claimAttentionEvent",
+  "claimAttentionReceipt",
+  "claimChecksWaiting",
+  "claimEscalationInvite",
+  "claimFollowupEvent",
+  "claimFollowupReceipt",
+  "claimGateEvent",
+  "claimGateOutcome",
+  "claimGateReceipt",
+  "claimLinkHint",
+  "claimNotice",
+  "claimNoticeRepost",
+  "claimPendingDecrypt",
+  "claimQuestionEvent",
+  "claimQuestionReceipt",
+  "claimTransaction",
+  "close",
+  "closeChecksWaiting",
+  "countRepostAttempt",
+  "cryptoDevice",
+  "disableBoard",
+  "dropNotice",
+  "followupDelivery",
+  "followupEvent",
+  "forgetCryptoDevice",
+  "forgetEscalationInvite",
+  "gateDelivery",
+  "gateEvent",
+  "getBoard",
+  "invitesOwingReposts",
+  "knownCardTitle",
+  "listBoards",
+  "membersOf",
+  "membershipOf",
+  "moveAttentionEvent",
+  "moveChecksWaiting",
+  "moveFollowupEvent",
+  "moveGateEvent",
+  "moveQuestionEvent",
+  "notice",
+  "openChecksWaiting",
+  "openQuestionsInRoom",
+  "parkPendingDecrypt",
+  "pendingDecrypts",
+  "postedAttentionAwaitingOutcome",
+  "postedEscalations",
+  "postedFollowupsAwaitingOutcome",
+  "postedGatesAwaitingOutcome",
+  "postedQuestionsAwaitingOutcome",
+  "questionDelivery",
+  "questionEvent",
+  "recordAttentionDelivery",
+  "recordAttentionPosted",
+  "recordBoardRoom",
+  "recordChecksWaitingPosted",
+  "recordCryptoDevice",
+  "recordFollowupDelivery",
+  "recordFollowupPosted",
+  "recordGateDelivery",
+  "recordGatePosted",
+  "recordGateProse",
+  "recordGateQuorum",
+  "recordInviteJoined",
+  "recordInviteReposted",
+  "recordMembership",
+  "recordNotice",
+  "recordNoticeCardMoved",
+  "recordNoticePosted",
+  "recordNoticeProse",
+  "recordQuestionDelivery",
+  "recordQuestionPosted",
+  "releaseGateOutcome",
+  "releaseNoticeRepost",
+  "releaseUnfinishedOutcomes",
+  "schemaVersion",
+  "settleAttentionDelivery",
+  "settleAttentionEvent",
+  "settleFollowupDelivery",
+  "settleFollowupEvent",
+  "settleGateDelivery",
+  "settleGateEvent",
+  "settleQuestionDelivery",
+  "settleQuestionEvent",
+  "unpostedAttention",
+  "unpostedFollowups",
+  "unpostedGates",
+  "unpostedNotices",
+  "unpostedQuestions",
+  "upsertBoard"
+ ],
+ "migrationsSha256": "c83126a73077aa047b512ce9fd5bd11f9ee6ab79359089eb2dc052a635fe2b76",
+ "schema": [
+  {
+   "type": "index",
+   "name": "checks_waiting_event",
+   "sql": "CREATE INDEX checks_waiting_event ON checks_waiting (event_id)"
+  },
+  {
+   "type": "index",
+   "name": "followup_deliveries_board",
+   "sql": "CREATE INDEX followup_deliveries_board ON followup_deliveries (board_id)"
+  },
+  {
+   "type": "index",
+   "name": "followup_events_board",
+   "sql": "CREATE INDEX followup_events_board ON followup_events (board_id)"
+  },
+  {
+   "type": "index",
+   "name": "gate_deliveries_board",
+   "sql": "CREATE INDEX gate_deliveries_board ON gate_deliveries (board_id)"
+  },
+  {
+   "type": "index",
+   "name": "gate_events_room",
+   "sql": "CREATE INDEX gate_events_room ON gate_events (room_id)"
+  },
+  {
+   "type": "index",
+   "name": "notices_board",
+   "sql": "CREATE INDEX notices_board ON notices (board_id)"
+  },
+  {
+   "type": "index",
+   "name": "pending_decrypts_seen",
+   "sql": "CREATE INDEX pending_decrypts_seen ON pending_decrypts (first_seen_at)"
+  },
+  {
+   "type": "index",
+   "name": "question_deliveries_board",
+   "sql": "CREATE INDEX question_deliveries_board ON question_deliveries (board_id)"
+  },
+  {
+   "type": "index",
+   "name": "question_events_board",
+   "sql": "CREATE INDEX question_events_board ON question_events (board_id)"
+  },
+  {
+   "type": "index",
+   "name": "question_events_room",
+   "sql": "CREATE INDEX question_events_room ON question_events (room_id)"
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_as_transactions_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_attention_deliveries_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_attention_events_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_board_rooms_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_board_rooms_2",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_boards_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_checks_waiting_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_crypto_devices_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_escalation_invites_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_followup_deliveries_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_followup_events_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_gate_deliveries_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_gate_events_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_link_hints_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_notices_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_pending_decrypts_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_question_deliveries_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_question_events_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_room_members_1",
+   "sql": null
+  },
+  {
+   "type": "table",
+   "name": "as_transactions",
+   "sql": "CREATE TABLE as_transactions (\n     txn_id TEXT PRIMARY KEY,\n     received_at TEXT NOT NULL\n   )"
+  },
+  {
+   "type": "table",
+   "name": "attention_deliveries",
+   "sql": "CREATE TABLE attention_deliveries (\n     board_id TEXT NOT NULL,\n     card_id TEXT NOT NULL,\n     wait_id TEXT NOT NULL,\n     received_at TEXT NOT NULL,\n     body TEXT NOT NULL,\n     settled_at TEXT,\n     PRIMARY KEY (board_id, card_id, wait_id)\n   )"
+  },
+  {
+   "type": "table",
+   "name": "attention_events",
+   "sql": "CREATE TABLE attention_events (\n     board_id TEXT NOT NULL,\n     card_id TEXT NOT NULL,\n     wait_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     event_id TEXT,\n     claimed_at TEXT NOT NULL,\n     posted_at TEXT,\n     options TEXT NOT NULL,\n     outcome_posted_at TEXT,\n     settled_at TEXT,\n     PRIMARY KEY (board_id, card_id, wait_id)\n   )"
+  },
+  {
+   "type": "table",
+   "name": "board_rooms",
+   "sql": "CREATE TABLE board_rooms (\n     board_id TEXT PRIMARY KEY,\n     room_id TEXT NOT NULL UNIQUE,\n     alias TEXT NOT NULL,\n     created_at TEXT NOT NULL\n   , encrypted INTEGER NOT NULL DEFAULT 0)"
+  },
+  {
+   "type": "table",
+   "name": "boards",
+   "sql": "CREATE TABLE boards (\n     board_id TEXT PRIMARY KEY,\n     sp_tenant_id TEXT NOT NULL,\n     org_id TEXT NOT NULL,\n     invitees TEXT NOT NULL,\n     enabled INTEGER NOT NULL,\n     created_at TEXT NOT NULL,\n     updated_at TEXT NOT NULL\n   )"
+  },
+  {
+   "type": "table",
+   "name": "checks_waiting",
+   "sql": "CREATE TABLE checks_waiting (\n     board_id TEXT NOT NULL,\n     arrival_id TEXT NOT NULL,\n     card_id TEXT NOT NULL,\n     card_title TEXT NOT NULL,\n     stage_key TEXT NOT NULL,\n     stage_name TEXT,\n     room_id TEXT NOT NULL,\n     event_id TEXT,\n     claimed_at TEXT NOT NULL,\n     posted_at TEXT,\n     closed_at TEXT,\n     PRIMARY KEY (board_id, arrival_id)\n   )"
+  },
+  {
+   "type": "table",
+   "name": "crypto_devices",
+   "sql": "CREATE TABLE crypto_devices (\n     user_id TEXT PRIMARY KEY,\n     device_id TEXT NOT NULL,\n     created_at TEXT NOT NULL\n   )"
+  },
+  {
+   "type": "table",
+   "name": "escalation_invites",
+   "sql": "CREATE TABLE escalation_invites (\n     board_id TEXT NOT NULL,\n     user_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     invited_at TEXT NOT NULL,\n     joined_at TEXT,\n     reposted_at TEXT,\n     repost_attempts INTEGER NOT NULL DEFAULT 0,\n     PRIMARY KEY (board_id, user_id)\n   )"
+  },
+  {
+   "type": "table",
+   "name": "followup_deliveries",
+   "sql": "CREATE TABLE followup_deliveries (\n     gate_id TEXT PRIMARY KEY,\n     board_id TEXT NOT NULL,\n     received_at TEXT NOT NULL,\n     body TEXT NOT NULL,\n     settled_at TEXT\n   )"
+  },
+  {
+   "type": "table",
+   "name": "followup_events",
+   "sql": "CREATE TABLE followup_events (\n     gate_id TEXT PRIMARY KEY,\n     board_id TEXT NOT NULL,\n     card_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     event_id TEXT,\n     claimed_at TEXT NOT NULL,\n     posted_at TEXT,\n     options TEXT NOT NULL,\n     subject_preview_complete INTEGER,\n     outcome_posted_at TEXT,\n     settled_at TEXT\n   )"
+  },
+  {
+   "type": "table",
+   "name": "gate_deliveries",
+   "sql": "CREATE TABLE gate_deliveries (\n     gate_id TEXT PRIMARY KEY,\n     board_id TEXT NOT NULL,\n     received_at TEXT NOT NULL,\n     body TEXT NOT NULL\n   , settled_at TEXT)"
+  },
+  {
+   "type": "table",
+   "name": "gate_events",
+   "sql": "CREATE TABLE gate_events (\n     gate_id TEXT PRIMARY KEY,\n     board_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     card_event_id TEXT,\n     prose_event_id TEXT,\n     claimed_at TEXT NOT NULL,\n     posted_at TEXT\n   , options TEXT, subject_id TEXT, subject_digest TEXT, subject_preview_complete INTEGER, variants TEXT, quorum TEXT, outcome_claimed_at TEXT, outcome_posted_at TEXT, settled_at TEXT, settled_decision TEXT)"
+  },
+  {
+   "type": "table",
+   "name": "link_hints",
+   "sql": "CREATE TABLE link_hints (\n     sender TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     day TEXT NOT NULL,\n     PRIMARY KEY (sender, room_id, day)\n   )"
+  },
+  {
+   "type": "table",
+   "name": "notices",
+   "sql": "CREATE TABLE notices (\n     notice_id TEXT PRIMARY KEY,\n     notice TEXT NOT NULL,\n     board_id TEXT NOT NULL,\n     card_id TEXT NOT NULL,\n     decision_kind TEXT,\n     decision_id TEXT,\n     body TEXT NOT NULL,\n     received_at TEXT NOT NULL,\n     room_id TEXT,\n     reply_to TEXT,\n     claimed_at TEXT,\n     prose_event_id TEXT,\n     posted_at TEXT,\n     dropped_at TEXT,\n     reposted_at TEXT,\n     card_moved_at TEXT\n   )"
+  },
+  {
+   "type": "table",
+   "name": "pending_decrypts",
+   "sql": "CREATE TABLE pending_decrypts (\n     event_id TEXT PRIMARY KEY,\n     room_id TEXT NOT NULL,\n     event TEXT NOT NULL,\n     first_seen_at TEXT NOT NULL\n   )"
+  },
+  {
+   "type": "table",
+   "name": "question_deliveries",
+   "sql": "CREATE TABLE question_deliveries (\n     elicitation_id TEXT PRIMARY KEY,\n     board_id TEXT NOT NULL,\n     received_at TEXT NOT NULL,\n     body TEXT NOT NULL,\n     settled_at TEXT\n   )"
+  },
+  {
+   "type": "table",
+   "name": "question_events",
+   "sql": "CREATE TABLE question_events (\n     elicitation_id TEXT PRIMARY KEY,\n     board_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     event_id TEXT,\n     claimed_at TEXT NOT NULL,\n     posted_at TEXT,\n     options TEXT NOT NULL,\n     options_v2 TEXT NOT NULL,\n     free_text_max_length INTEGER,\n     subject_id TEXT,\n     subject_digest TEXT,\n     subject_preview_complete INTEGER,\n     subject_expires_at TEXT,\n     approval_request INTEGER NOT NULL,\n     outcome_posted_at TEXT,\n     settled_at TEXT\n   )"
+  },
+  {
+   "type": "table",
+   "name": "room_members",
+   "sql": "CREATE TABLE room_members (\n     room_id TEXT NOT NULL,\n     user_id TEXT NOT NULL,\n     membership TEXT NOT NULL,\n     updated_at TEXT NOT NULL,\n     PRIMARY KEY (room_id, user_id)\n   )"
+  }
+ ],
+ "calls": [
+  [
+   "schemaVersion",
+   9
+  ],
+  [
+   "claimTransaction",
+   true
+  ],
+  [
+   "claimTransaction",
+   false
+  ],
+  [
+   "upsertBoard",
+   {
+    "boardId": "brd_1",
+    "spTenantId": "t_1",
+    "orgId": "org_1",
+    "invitees": [
+     "@a:hs"
+    ],
+    "enabled": true,
+    "createdAt": "2026-01-01T00:00:03.000Z",
+    "updatedAt": "2026-01-01T00:00:03.000Z"
+   }
+  ],
+  [
+   "upsertBoard",
+   {
+    "boardId": "brd_1",
+    "spTenantId": "t_1",
+    "orgId": "org_1",
+    "invitees": [
+     "@a:hs",
+     "@b:hs"
+    ],
+    "enabled": true,
+    "createdAt": "2026-01-01T00:00:03.000Z",
+    "updatedAt": "2026-01-01T00:00:04.000Z"
+   }
+  ],
+  [
+   "upsertBoard",
+   {
+    "boardId": "brd_2",
+    "spTenantId": "t_1",
+    "orgId": "org_1",
+    "invitees": [],
+    "enabled": true,
+    "createdAt": "2026-01-01T00:00:05.000Z",
+    "updatedAt": "2026-01-01T00:00:05.000Z"
+   }
+  ],
+  [
+   "disableBoard",
+   {
+    "boardId": "brd_2",
+    "spTenantId": "t_1",
+    "orgId": "org_1",
+    "invitees": [],
+    "enabled": false,
+    "createdAt": "2026-01-01T00:00:05.000Z",
+    "updatedAt": "2026-01-01T00:00:06.000Z"
+   }
+  ],
+  [
+   "disableBoard",
+   null
+  ],
+  [
+   "getBoard",
+   {
+    "boardId": "brd_1",
+    "spTenantId": "t_1",
+    "orgId": "org_1",
+    "invitees": [
+     "@a:hs",
+     "@b:hs"
+    ],
+    "enabled": true,
+    "createdAt": "2026-01-01T00:00:03.000Z",
+    "updatedAt": "2026-01-01T00:00:04.000Z"
+   }
+  ],
+  [
+   "getBoard",
+   null
+  ],
+  [
+   "listBoards",
+   [
+    {
+     "boardId": "brd_1",
+     "spTenantId": "t_1",
+     "orgId": "org_1",
+     "invitees": [
+      "@a:hs",
+      "@b:hs"
+     ],
+     "enabled": true,
+     "createdAt": "2026-01-01T00:00:03.000Z",
+     "updatedAt": "2026-01-01T00:00:04.000Z"
+    },
+    {
+     "boardId": "brd_2",
+     "spTenantId": "t_1",
+     "orgId": "org_1",
+     "invitees": [],
+     "enabled": false,
+     "createdAt": "2026-01-01T00:00:05.000Z",
+     "updatedAt": "2026-01-01T00:00:06.000Z"
+    }
+   ]
+  ],
+  [
+   "recordGateDelivery",
+   true
+  ],
+  [
+   "recordGateDelivery",
+   false
+  ],
+  [
+   "recordGateDelivery",
+   true
+  ],
+  [
+   "recordGateDelivery",
+   true
+  ],
+  [
+   "gateDelivery",
+   {
+    "boardId": "brd_1",
+    "body": {
+     "n": 1
+    },
+    "settledAt": null
+   }
+  ],
+  [
+   "gateDelivery",
+   null
+  ],
+  [
+   "unpostedGates",
+   [
+    {
+     "gateId": "gte_1",
+     "boardId": "brd_1",
+     "body": {
+      "n": 1
+     }
+    },
+    {
+     "gateId": "gte_2",
+     "boardId": "brd_2",
+     "body": {
+      "n": 3
+     }
+    },
+    {
+     "gateId": "gte_3",
+     "boardId": "brd_1",
+     "body": {
+      "n": 4
+     }
+    }
+   ]
+  ],
+  [
+   "unpostedGates",
+   [
+    {
+     "gateId": "gte_1",
+     "boardId": "brd_1",
+     "body": {
+      "n": 1
+     }
+    },
+    {
+     "gateId": "gte_3",
+     "boardId": "brd_1",
+     "body": {
+      "n": 4
+     }
+    }
+   ]
+  ],
+  [
+   "settleGateDelivery",
+   true
+  ],
+  [
+   "settleGateDelivery",
+   false
+  ],
+  [
+   "recordBoardRoom",
+   {
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "alias": "#b1:hs",
+    "encrypted": true,
+    "createdAt": "2026-01-01T00:00:14.000Z"
+   }
+  ],
+  [
+   "recordBoardRoom",
+   {
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "alias": "#b1:hs",
+    "encrypted": true,
+    "createdAt": "2026-01-01T00:00:14.000Z"
+   }
+  ],
+  [
+   "boardRoom",
+   {
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "alias": "#b1:hs",
+    "encrypted": true,
+    "createdAt": "2026-01-01T00:00:14.000Z"
+   }
+  ],
+  [
+   "boardRoom",
+   null
+  ],
+  [
+   "boardRoomByRoomId",
+   {
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "alias": "#b1:hs",
+    "encrypted": true,
+    "createdAt": "2026-01-01T00:00:14.000Z"
+   }
+  ],
+  [
+   "boardRoomByRoomId",
+   null
+  ],
+  [
+   "recordMembership",
+   null
+  ],
+  [
+   "recordMembership",
+   null
+  ],
+  [
+   "recordMembership",
+   null
+  ],
+  [
+   "membersOf",
+   [
+    "@a:hs",
+    "@b:hs"
+   ]
+  ],
+  [
+   "membershipOf",
+   "join"
+  ],
+  [
+   "membershipOf",
+   null
+  ],
+  [
+   "claimGateEvent",
+   true
+  ],
+  [
+   "claimGateEvent",
+   false
+  ],
+  [
+   "claimGateEvent",
+   true
+  ],
+  [
+   "gateEvent",
+   {
+    "gateId": "gte_1",
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "cardEventId": null,
+    "proseEventId": null,
+    "claimedAt": "2026-01-01T00:00:19.000Z",
+    "postedAt": null,
+    "offer": {
+     "options": [
+      {
+       "id": "approve",
+       "label": "Approve",
+       "meaning": "approve",
+       "needs_comment": false
+      }
+     ],
+     "subjectId": "sub_1",
+     "subjectDigest": "sha256:abc",
+     "subjectPreviewComplete": true,
+     "variants": null,
+     "quorum": {
+      "required": 2
+     }
+    },
+    "outcomeClaimedAt": null,
+    "outcomePostedAt": null,
+    "settledAt": null,
+    "settledDecision": null
+   }
+  ],
+  [
+   "recordGateProse",
+   null
+  ],
+  [
+   "recordGatePosted",
+   null
+  ],
+  [
+   "recordGatePosted",
+   null
+  ],
+  [
+   "unpostedGates",
+   []
+  ],
+  [
+   "postedGatesAwaitingOutcome",
+   [
+    {
+     "gateId": "gte_1",
+     "boardId": "brd_1",
+     "roomId": "!r1:hs",
+     "cardEventId": "$c1",
+     "proseEventId": "$p1",
+     "claimedAt": "2026-01-01T00:00:19.000Z",
+     "postedAt": "2026-01-01T00:00:22.000Z",
+     "offer": {
+      "options": [
+       {
+        "id": "approve",
+        "label": "Approve",
+        "meaning": "approve",
+        "needs_comment": false
+       }
+      ],
+      "subjectId": "sub_1",
+      "subjectDigest": "sha256:abc",
+      "subjectPreviewComplete": true,
+      "variants": null,
+      "quorum": {
+       "required": 2
+      }
+     },
+     "outcomeClaimedAt": null,
+     "outcomePostedAt": null,
+     "settledAt": null,
+     "settledDecision": null
+    },
+    {
+     "gateId": "gte_2",
+     "boardId": "brd_1",
+     "roomId": "!r1:hs",
+     "cardEventId": "$c2",
+     "proseEventId": null,
+     "claimedAt": "2026-01-01T00:00:21.000Z",
+     "postedAt": "2026-01-01T00:00:23.000Z",
+     "offer": null,
+     "outcomeClaimedAt": null,
+     "outcomePostedAt": null,
+     "settledAt": null,
+     "settledDecision": null
+    }
+   ]
+  ],
+  [
+   "moveGateEvent",
+   true
+  ],
+  [
+   "moveGateEvent",
+   false
+  ],
+  [
+   "recordGateQuorum",
+   true
+  ],
+  [
+   "recordGateQuorum",
+   true
+  ],
+  [
+   "recordGateQuorum",
+   false
+  ],
+  [
+   "recordGateQuorum",
+   false
+  ],
+  [
+   "claimGateOutcome",
+   true
+  ],
+  [
+   "claimGateOutcome",
+   false
+  ],
+  [
+   "releaseGateOutcome",
+   null
+  ],
+  [
+   "claimGateOutcome",
+   true
+  ],
+  [
+   "claimGateOutcome",
+   true
+  ],
+  [
+   "releaseUnfinishedOutcomes",
+   2
+  ],
+  [
+   "claimGateReceipt",
+   true
+  ],
+  [
+   "claimGateReceipt",
+   false
+  ],
+  [
+   "settleGateEvent",
+   true
+  ],
+  [
+   "settleGateEvent",
+   false
+  ],
+  [
+   "gateEvent",
+   {
+    "gateId": "gte_2",
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "cardEventId": "$c2",
+    "proseEventId": null,
+    "claimedAt": "2026-01-01T00:00:21.000Z",
+    "postedAt": "2026-01-01T00:00:23.000Z",
+    "offer": null,
+    "outcomeClaimedAt": "2026-01-01T00:00:30.000Z",
+    "outcomePostedAt": "2026-01-01T00:00:30.000Z",
+    "settledAt": "2026-01-01T00:00:30.000Z",
+    "settledDecision": "approve"
+   }
+  ],
+  [
+   "gateEvent",
+   null
+  ],
+  [
+   "postedGatesAwaitingOutcome",
+   []
+  ],
+  [
+   "claimLinkHint",
+   true
+  ],
+  [
+   "claimLinkHint",
+   false
+  ],
+  [
+   "claimLinkHint",
+   true
+  ],
+  [
+   "recordQuestionDelivery",
+   true
+  ],
+  [
+   "recordQuestionDelivery",
+   false
+  ],
+  [
+   "recordQuestionDelivery",
+   true
+  ],
+  [
+   "recordQuestionDelivery",
+   true
+  ],
+  [
+   "questionDelivery",
+   {
+    "boardId": "brd_1",
+    "body": {
+     "q": 1
+    },
+    "settledAt": null
+   }
+  ],
+  [
+   "questionDelivery",
+   null
+  ],
+  [
+   "unpostedQuestions",
+   [
+    {
+     "elicitationId": "elc_1",
+     "boardId": "brd_1",
+     "body": {
+      "q": 1
+     }
+    },
+    {
+     "elicitationId": "elc_2",
+     "boardId": "brd_1",
+     "body": {
+      "q": 3
+     }
+    },
+    {
+     "elicitationId": "elc_3",
+     "boardId": "brd_2",
+     "body": {
+      "q": 4
+     }
+    }
+   ]
+  ],
+  [
+   "unpostedQuestions",
+   [
+    {
+     "elicitationId": "elc_3",
+     "boardId": "brd_2",
+     "body": {
+      "q": 4
+     }
+    }
+   ]
+  ],
+  [
+   "settleQuestionDelivery",
+   true
+  ],
+  [
+   "settleQuestionDelivery",
+   false
+  ],
+  [
+   "claimQuestionEvent",
+   true
+  ],
+  [
+   "claimQuestionEvent",
+   false
+  ],
+  [
+   "claimQuestionEvent",
+   true
+  ],
+  [
+   "recordQuestionPosted",
+   null
+  ],
+  [
+   "recordQuestionPosted",
+   null
+  ],
+  [
+   "questionEvent",
+   {
+    "elicitationId": "elc_1",
+    "boardId": "brd_1",
+    "roomId": "!r1:hs",
+    "eventId": "$q1",
+    "claimedAt": "2026-01-01T00:00:38.000Z",
+    "postedAt": "2026-01-01T00:00:41.000Z",
+    "offer": {
+     "options": [
+      {
+       "id": "yes",
+       "label": "Yes"
+      }
+     ],
+     "optionsV2": [
+      {
+       "id": "yes",
+       "label": "Yes",
+       "meaning": "yes",
+       "needs_comment": false
+      }
+     ],
+     "freeTextMaxLength": 200,
+     "subject": null,
+     "approvalRequest": false
+    },
+    "outcomePostedAt": null,
+    "settledAt": null
+   }
+  ],
+  [
+   "questionEvent",
+   null
+  ],
+  [
+   "openQuestionsInRoom",
+   [
+    {
+     "elicitationId": "elc_2",
+     "boardId": "brd_1",
+     "roomId": "!r1:hs",
+     "eventId": "$q2",
+     "claimedAt": "2026-01-01T00:00:40.000Z",
+     "postedAt": "2026-01-01T00:00:42.000Z",
+     "offer": {
+      "options": [
+       {
+        "id": "yes",
+        "label": "Yes"
+       }
+      ],
+      "optionsV2": [
+       {
+        "id": "yes",
+        "label": "Yes",
+        "meaning": "yes",
+        "needs_comment": false
+       }
+      ],
+      "freeTextMaxLength": 200,
+      "subject": null,
+      "approvalRequest": false
+     },
+     "outcomePostedAt": null,
+     "settledAt": null
+    },
+    {
+     "elicitationId": "elc_1",
+     "boardId": "brd_1",
+     "roomId": "!r1:hs",
+     "eventId": "$q1",
+     "claimedAt": "2026-01-01T00:00:38.000Z",
+     "postedAt": "2026-01-01T00:00:41.000Z",
+     "offer": {
+      "options": [
+       {
+        "id": "yes",
+        "label": "Yes"
+       }
+      ],
+      "optionsV2": [
+       {
+        "id": "yes",
+        "label": "Yes",
+        "meaning": "yes",
+        "needs_comment": false
+       }
+      ],
+      "freeTextMaxLength": 200,
+      "subject": null,
+      "approvalRequest": false
+     },
+     "outcomePostedAt": null,
+     "settledAt": null
+    }
+   ]
+  ],
+  [
+   "moveQuestionEvent",
+   true
+  ],
+  [
+   "moveQuestionEvent",
+   false
+  ],
+  [
+   "claimQuestionReceipt",
+   true
+  ],
+  [
+   "claimQuestionReceipt",
+   false
+  ],
+  [
+   "moveQuestionEvent",
+   false
+  ],
+  [
+   "settleQuestionEvent",
+   true
+  ],
+  [
+   "settleQuestionEvent",
+   false
+  ],
+  [
+   "postedQuestionsAwaitingOutcome",
+   []
+  ],
+  [
+   "unpostedQuestions",
+   []
+  ],
+  [
+   "recordFollowupDelivery",
+   true
+  ],
+  [
+   "recordFollowupDelivery",
+   false
+  ],
+  [
+   "recordFollowupDelivery",
+   true
+  ],
+  [
+   "recordFollowupDelivery",
+   true
+  ],
+  [
+   "followupDelivery",
+   {
+    "boardId": "brd_1",
+    "body": {
+     "f": 1
+    },
+    "settledAt": null
+   }
+  ],
+  [
+   "followupDelivery",
+   null
+  ],
+  [
+   "unpostedFollowups",
+   [
+    {
+     "gateId": "gte_f1",
+     "boardId": "brd_1",
+     "body": {
+      "f": 1
+     }
+    },
+    {
+     "gateId": "gte_f2",
+     "boardId": "brd_1",
+     "body": {
+      "f": 3
+     }
+    },
+    {
+     "gateId": "gte_f3",
+     "boardId": "brd_2",
+     "body": {
+      "f": 4
+     }
+    }
+   ]
+  ],
+  [
+   "unpostedFollowups",
+   [
+    {
+     "gateId": "gte_f3",
+     "boardId": "brd_2",
+     "body": {
+      "f": 4
+     }
+    }
+   ]
+  ],
+  [
+   "settleFollowupDelivery",
+   true
+  ],
+  [
+   "settleFollowupDelivery",
+   false
+  ],
+  [
+   "claimFollowupEvent",
+   true
+  ],
+  [
+   "claimFollowupEvent",
+   false
+  ],
+  [
+   "claimFollowupEvent",
+   true
+  ],
+  [
+   "recordFollowupPosted",
+   null
+  ],
+  [
+   "recordFollowupPosted",
+   null
+  ],
+  [
+   "followupEvent",
+   {
+    "gateId": "gte_f1",
+    "boardId": "brd_1",
+    "cardId": "crd_1",
+    "roomId": "!r1:hs",
+    "eventId": "$f1",
+    "claimedAt": "2026-01-01T00:00:53.000Z",
+    "postedAt": "2026-01-01T00:00:56.000Z",
+    "offer": {
+     "options": [
+      {
+       "id": "retry",
+       "label": "Retry"
+      }
+     ],
+     "subjectPreviewComplete": null
+    },
+    "outcomePostedAt": null,
+    "settledAt": null
+   }
+  ],
+  [
+   "followupEvent",
+   null
+  ],
+  [
+   "moveFollowupEvent",
+   true
+  ],
+  [
+   "moveFollowupEvent",
+   false
+  ],
+  [
+   "claimFollowupReceipt",
+   true
+  ],
+  [
+   "claimFollowupReceipt",
+   false
+  ],
+  [
+   "moveFollowupEvent",
+   false
+  ],
+  [
+   "settleFollowupEvent",
+   true
+  ],
+  [
+   "settleFollowupEvent",
+   false
+  ],
+  [
+   "postedFollowupsAwaitingOutcome",
+   []
+  ],
+  [
+   "unpostedFollowups",
+   []
+  ],
+  [
+   "recordAttentionDelivery",
+   true
+  ],
+  [
+   "recordAttentionDelivery",
+   false
+  ],
+  [
+   "recordAttentionDelivery",
+   true
+  ],
+  [
+   "recordAttentionDelivery",
+   true
+  ],
+  [
+   "attentionDelivery",
+   {
+    "body": {
+     "w": 1
+    },
+    "settledAt": null
+   }
+  ],
+  [
+   "attentionDelivery",
+   null
+  ],
+  [
+   "unpostedAttention",
+   [
+    {
+     "boardId": "brd_1",
+     "cardId": "crd_1",
+     "waitId": "wt_1",
+     "body": {
+      "w": 1
+     }
+    },
+    {
+     "boardId": "brd_1",
+     "cardId": "crd_2",
+     "waitId": "wt_2",
+     "body": {
+      "w": 3
+     }
+    },
+    {
+     "boardId": "brd_2",
+     "cardId": "crd_2",
+     "waitId": "wt_2",
+     "body": {
+      "w": 4
+     }
+    }
+   ]
+  ],
+  [
+   "unpostedAttention",
+   [
+    {
+     "boardId": "brd_2",
+     "cardId": "crd_2",
+     "waitId": "wt_2",
+     "body": {
+      "w": 4
+     }
+    }
+   ]
+  ],
+  [
+   "settleAttentionDelivery",
+   true
+  ],
+  [
+   "settleAttentionDelivery",
+   false
+  ],
+  [
+   "claimAttentionEvent",
+   true
+  ],
+  [
+   "claimAttentionEvent",
+   false
+  ],
+  [
+   "claimAttentionEvent",
+   true
+  ],
+  [
+   "recordAttentionPosted",
+   null
+  ],
+  [
+   "recordAttentionPosted",
+   null
+  ],
+  [
+   "attentionEvent",
+   {
+    "boardId": "brd_1",
+    "cardId": "crd_1",
+    "waitId": "wt_1",
+    "roomId": "!r1:hs",
+    "eventId": "$w1",
+    "claimedAt": "2026-01-01T00:01:08.000Z",
+    "postedAt": "2026-01-01T00:01:11.000Z",
+    "options": [
+     {
+      "id": "done",
+      "label": "Done",
+      "input": {
+       "kind": "text",
+       "required": false,
+       "max_length": 50
+      }
+     }
+    ],
+    "outcomePostedAt": null,
+    "settledAt": null
+   }
+  ],
+  [
+   "attentionEvent",
+   null
+  ],
+  [
+   "moveAttentionEvent",
+   true
+  ],
+  [
+   "moveAttentionEvent",
+   false
+  ],
+  [
+   "claimAttentionReceipt",
+   true
+  ],
+  [
+   "claimAttentionReceipt",
+   false
+  ],
+  [
+   "moveAttentionEvent",
+   false
+  ],
+  [
+   "settleAttentionEvent",
+   true
+  ],
+  [
+   "settleAttentionEvent",
+   false
+  ],
+  [
+   "postedAttentionAwaitingOutcome",
+   []
+  ],
+  [
+   "unpostedAttention",
+   []
+  ],
+  [
+   "recordNotice",
+   true
+  ],
+  [
+   "recordNotice",
+   false
+  ],
+  [
+   "recordNotice",
+   true
+  ],
+  [
+   "recordNotice",
+   true
+  ],
+  [
+   "notice",
+   {
+    "noticeId": "ntc_1",
+    "notice": "escalated",
+    "boardId": "brd_1",
+    "cardId": "crd_1",
+    "decisionKind": "gate",
+    "decisionId": "gte_1",
+    "body": {
+     "cardTitle": " Ship it "
+    },
+    "receivedAt": "2026-01-01T00:01:17.000Z",
+    "roomId": null,
+    "replyTo": null,
+    "claimedAt": null,
+    "proseEventId": null,
+    "postedAt": null,
+    "droppedAt": null,
+    "repostedAt": null,
+    "cardMovedAt": null
+   }
+  ],
+  [
+   "notice",
+   null
+  ],
+  [
+   "unpostedNotices",
+   [
+    {
+     "noticeId": "ntc_1",
+     "notice": "escalated",
+     "boardId": "brd_1",
+     "cardId": "crd_1",
+     "decisionKind": "gate",
+     "decisionId": "gte_1",
+     "body": {
+      "cardTitle": " Ship it "
+     },
+     "receivedAt": "2026-01-01T00:01:17.000Z",
+     "roomId": null,
+     "replyTo": null,
+     "claimedAt": null,
+     "proseEventId": null,
+     "postedAt": null,
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    },
+    {
+     "noticeId": "ntc_2",
+     "notice": "reminded",
+     "boardId": "brd_1",
+     "cardId": "crd_1",
+     "decisionKind": null,
+     "decisionId": null,
+     "body": {},
+     "receivedAt": "2026-01-01T00:01:19.000Z",
+     "roomId": null,
+     "replyTo": null,
+     "claimedAt": null,
+     "proseEventId": null,
+     "postedAt": null,
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    },
+    {
+     "noticeId": "ntc_3",
+     "notice": "escalated",
+     "boardId": "brd_2",
+     "cardId": "crd_1",
+     "decisionKind": "gate",
+     "decisionId": "gte_1",
+     "body": {
+      "cardTitle": " Ship it "
+     },
+     "receivedAt": "2026-01-01T00:01:20.000Z",
+     "roomId": null,
+     "replyTo": null,
+     "claimedAt": null,
+     "proseEventId": null,
+     "postedAt": null,
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    }
+   ]
+  ],
+  [
+   "unpostedNotices",
+   [
+    {
+     "noticeId": "ntc_3",
+     "notice": "escalated",
+     "boardId": "brd_2",
+     "cardId": "crd_1",
+     "decisionKind": "gate",
+     "decisionId": "gte_1",
+     "body": {
+      "cardTitle": " Ship it "
+     },
+     "receivedAt": "2026-01-01T00:01:20.000Z",
+     "roomId": null,
+     "replyTo": null,
+     "claimedAt": null,
+     "proseEventId": null,
+     "postedAt": null,
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    }
+   ]
+  ],
+  [
+   "claimNotice",
+   true
+  ],
+  [
+   "claimNotice",
+   false
+  ],
+  [
+   "claimNotice",
+   true
+  ],
+  [
+   "recordNoticeProse",
+   null
+  ],
+  [
+   "recordNoticePosted",
+   null
+  ],
+  [
+   "dropNotice",
+   false
+  ],
+  [
+   "dropNotice",
+   true
+  ],
+  [
+   "dropNotice",
+   false
+  ],
+  [
+   "recordNotice",
+   true
+  ],
+  [
+   "claimNotice",
+   true
+  ],
+  [
+   "recordNoticePosted",
+   null
+  ],
+  [
+   "postedEscalations",
+   [
+    {
+     "noticeId": "ntc_1",
+     "notice": "escalated",
+     "boardId": "brd_1",
+     "cardId": "crd_1",
+     "decisionKind": "gate",
+     "decisionId": "gte_1",
+     "body": {
+      "cardTitle": " Ship it "
+     },
+     "receivedAt": "2026-01-01T00:01:17.000Z",
+     "roomId": "!r1:hs",
+     "replyTo": "$c1b",
+     "claimedAt": "2026-01-01T00:01:21.000Z",
+     "proseEventId": "$n1",
+     "postedAt": "2026-01-01T00:01:24.000Z",
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    },
+    {
+     "noticeId": "ntc_9",
+     "notice": "escalated",
+     "boardId": "brd_1",
+     "cardId": "crd_1",
+     "decisionKind": "gate",
+     "decisionId": "gte_1",
+     "body": {
+      "cardTitle": " Ship it "
+     },
+     "receivedAt": "2026-01-01T00:01:28.000Z",
+     "roomId": "!r1:hs",
+     "replyTo": null,
+     "claimedAt": "2026-01-01T00:01:29.000Z",
+     "proseEventId": null,
+     "postedAt": "2026-01-01T00:01:30.000Z",
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    }
+   ]
+  ],
+  [
+   "claimNoticeRepost",
+   true
+  ],
+  [
+   "claimNoticeRepost",
+   false
+  ],
+  [
+   "releaseNoticeRepost",
+   null
+  ],
+  [
+   "claimNoticeRepost",
+   true
+  ],
+  [
+   "recordNoticeCardMoved",
+   null
+  ],
+  [
+   "notice",
+   {
+    "noticeId": "ntc_1",
+    "notice": "escalated",
+    "boardId": "brd_1",
+    "cardId": "crd_1",
+    "decisionKind": "gate",
+    "decisionId": "gte_1",
+    "body": {
+     "cardTitle": " Ship it "
+    },
+    "receivedAt": "2026-01-01T00:01:17.000Z",
+    "roomId": "!r1:hs",
+    "replyTo": "$c1b",
+    "claimedAt": "2026-01-01T00:01:21.000Z",
+    "proseEventId": "$n1",
+    "postedAt": "2026-01-01T00:01:24.000Z",
+    "droppedAt": null,
+    "repostedAt": "2026-01-01T00:01:33.000Z",
+    "cardMovedAt": "2026-01-01T00:01:34.000Z"
+   }
+  ],
+  [
+   "knownCardTitle",
+   "Ship it"
+  ],
+  [
+   "knownCardTitle",
+   null
+  ],
+  [
+   "unpostedNotices",
+   [
+    {
+     "noticeId": "ntc_2",
+     "notice": "reminded",
+     "boardId": "brd_1",
+     "cardId": "crd_1",
+     "decisionKind": null,
+     "decisionId": null,
+     "body": {},
+     "receivedAt": "2026-01-01T00:01:19.000Z",
+     "roomId": "!r1:hs",
+     "replyTo": null,
+     "claimedAt": "2026-01-01T00:01:23.000Z",
+     "proseEventId": null,
+     "postedAt": null,
+     "droppedAt": null,
+     "repostedAt": null,
+     "cardMovedAt": null
+    }
+   ]
+  ],
+  [
+   "claimEscalationInvite",
+   true
+  ],
+  [
+   "claimEscalationInvite",
+   false
+  ],
+  [
+   "claimEscalationInvite",
+   true
+  ],
+  [
+   "claimEscalationInvite",
+   true
+  ],
+  [
+   "forgetEscalationInvite",
+   null
+  ],
+  [
+   "recordInviteJoined",
+   {
+    "boardId": "brd_1",
+    "userId": "@c:hs",
+    "roomId": "!r1:hs",
+    "invitedAt": "2026-01-01T00:01:35.000Z",
+    "joinedAt": "2026-01-01T00:01:39.000Z",
+    "repostedAt": null,
+    "repostAttempts": 0
+   }
+  ],
+  [
+   "recordInviteJoined",
+   null
+  ],
+  [
+   "recordInviteJoined",
+   {
+    "boardId": "brd_1",
+    "userId": "@d:hs",
+    "roomId": "!r1:hs",
+    "invitedAt": "2026-01-01T00:01:37.000Z",
+    "joinedAt": "2026-01-01T00:01:41.000Z",
+    "repostedAt": null,
+    "repostAttempts": 0
+   }
+  ],
+  [
+   "recordInviteJoined",
+   null
+  ],
+  [
+   "invitesOwingReposts",
+   [
+    {
+     "boardId": "brd_1",
+     "userId": "@c:hs",
+     "roomId": "!r1:hs",
+     "invitedAt": "2026-01-01T00:01:35.000Z",
+     "joinedAt": "2026-01-01T00:01:39.000Z",
+     "repostedAt": null,
+     "repostAttempts": 0
+    },
+    {
+     "boardId": "brd_1",
+     "userId": "@d:hs",
+     "roomId": "!r1:hs",
+     "invitedAt": "2026-01-01T00:01:37.000Z",
+     "joinedAt": "2026-01-01T00:01:41.000Z",
+     "repostedAt": null,
+     "repostAttempts": 0
+    }
+   ]
+  ],
+  [
+   "countRepostAttempt",
+   null
+  ],
+  [
+   "countRepostAttempt",
+   null
+  ],
+  [
+   "invitesOwingReposts",
+   [
+    {
+     "boardId": "brd_1",
+     "userId": "@d:hs",
+     "roomId": "!r1:hs",
+     "invitedAt": "2026-01-01T00:01:37.000Z",
+     "joinedAt": "2026-01-01T00:01:41.000Z",
+     "repostedAt": null,
+     "repostAttempts": 0
+    }
+   ]
+  ],
+  [
+   "recordInviteReposted",
+   null
+  ],
+  [
+   "invitesOwingReposts",
+   [
+    {
+     "boardId": "brd_1",
+     "userId": "@c:hs",
+     "roomId": "!r1:hs",
+     "invitedAt": "2026-01-01T00:01:35.000Z",
+     "joinedAt": "2026-01-01T00:01:39.000Z",
+     "repostedAt": null,
+     "repostAttempts": 2
+    }
+   ]
+  ],
+  [
+   "claimChecksWaiting",
+   true
+  ],
+  [
+   "claimChecksWaiting",
+   false
+  ],
+  [
+   "claimChecksWaiting",
+   true
+  ],
+  [
+   "checksWaiting",
+   {
+    "boardId": "brd_1",
+    "arrivalId": "arr_1",
+    "cardId": "crd_1",
+    "cardTitle": "Ship it",
+    "stageKey": "review",
+    "stageName": "Review",
+    "roomId": "!r1:hs",
+    "eventId": null,
+    "claimedAt": "2026-01-01T00:01:44.000Z",
+    "postedAt": null,
+    "closedAt": null
+   }
+  ],
+  [
+   "checksWaiting",
+   null
+  ],
+  [
+   "recordChecksWaitingPosted",
+   null
+  ],
+  [
+   "checksWaitingByEvent",
+   {
+    "boardId": "brd_1",
+    "arrivalId": "arr_1",
+    "cardId": "crd_1",
+    "cardTitle": "Ship it",
+    "stageKey": "review",
+    "stageName": "Review",
+    "roomId": "!r1:hs",
+    "eventId": "$k1",
+    "claimedAt": "2026-01-01T00:01:44.000Z",
+    "postedAt": "2026-01-01T00:01:47.000Z",
+    "closedAt": null
+   }
+  ],
+  [
+   "checksWaitingByEvent",
+   null
+  ],
+  [
+   "openChecksWaiting",
+   {
+    "boardId": "brd_1",
+    "arrivalId": "arr_1",
+    "cardId": "crd_1",
+    "cardTitle": "Ship it",
+    "stageKey": "review",
+    "stageName": "Review",
+    "roomId": "!r1:hs",
+    "eventId": "$k1",
+    "claimedAt": "2026-01-01T00:01:44.000Z",
+    "postedAt": "2026-01-01T00:01:47.000Z",
+    "closedAt": null
+   }
+  ],
+  [
+   "openChecksWaiting",
+   null
+  ],
+  [
+   "moveChecksWaiting",
+   true
+  ],
+  [
+   "moveChecksWaiting",
+   false
+  ],
+  [
+   "closeChecksWaiting",
+   null
+  ],
+  [
+   "moveChecksWaiting",
+   false
+  ],
+  [
+   "openChecksWaiting",
+   null
+  ],
+  [
+   "cryptoDevice",
+   null
+  ],
+  [
+   "recordCryptoDevice",
+   "DEV1"
+  ],
+  [
+   "recordCryptoDevice",
+   "DEV1"
+  ],
+  [
+   "cryptoDevice",
+   "DEV1"
+  ],
+  [
+   "forgetCryptoDevice",
+   null
+  ],
+  [
+   "cryptoDevice",
+   null
+  ],
+  [
+   "recordCryptoDevice",
+   "DEV3"
+  ],
+  [
+   "parkPendingDecrypt",
+   true
+  ],
+  [
+   "parkPendingDecrypt",
+   false
+  ],
+  [
+   "parkPendingDecrypt",
+   true
+  ],
+  [
+   "parkPendingDecrypt",
+   true
+  ],
+  [
+   "pendingDecrypts",
+   [
+    {
+     "eventId": "$e2",
+     "roomId": "!r1:hs",
+     "event": {
+      "type": "m.room.encrypted",
+      "content": {
+       "ciphertext": "x"
+      }
+     },
+     "firstSeenAt": "2026-01-01T00:01:54.000Z"
+    },
+    {
+     "eventId": "$e3",
+     "roomId": "!r1:hs",
+     "event": {
+      "type": "m.room.encrypted",
+      "content": {
+       "ciphertext": "x"
+      }
+     },
+     "firstSeenAt": "2026-01-01T00:01:55.000Z"
+    }
+   ]
+  ],
+  [
+   "claimPendingDecrypt",
+   true
+  ],
+  [
+   "claimPendingDecrypt",
+   false
+  ],
+  [
+   "pendingDecrypts",
+   [
+    {
+     "eventId": "$e3",
+     "roomId": "!r1:hs",
+     "event": {
+      "type": "m.room.encrypted",
+      "content": {
+       "ciphertext": "x"
+      }
+     },
+     "firstSeenAt": "2026-01-01T00:01:55.000Z"
+    }
+   ]
+  ],
+  [
+   "schemaVersion",
+   9
+  ]
+ ],
+ "rows": {
+  "as_transactions": [
+   {
+    "txn_id": "txn_1",
+    "received_at": "2026-01-01T00:00:01.000Z"
+   }
+  ],
+  "attention_deliveries": [
+   {
+    "board_id": "brd_1",
+    "card_id": "crd_1",
+    "wait_id": "wt_1",
+    "received_at": "2026-01-01T00:01:02.000Z",
+    "body": "{\"w\":1}",
+    "settled_at": null
+   },
+   {
+    "board_id": "brd_1",
+    "card_id": "crd_2",
+    "wait_id": "wt_2",
+    "received_at": "2026-01-01T00:01:04.000Z",
+    "body": "{\"w\":3}",
+    "settled_at": null
+   },
+   {
+    "board_id": "brd_2",
+    "card_id": "crd_2",
+    "wait_id": "wt_2",
+    "received_at": "2026-01-01T00:01:05.000Z",
+    "body": "{\"w\":4}",
+    "settled_at": "2026-01-01T00:01:06.000Z"
+   }
+  ],
+  "attention_events": [
+   {
+    "board_id": "brd_1",
+    "card_id": "crd_1",
+    "wait_id": "wt_1",
+    "room_id": "!r1:hs",
+    "event_id": "$w1b",
+    "claimed_at": "2026-01-01T00:01:08.000Z",
+    "posted_at": "2026-01-01T00:01:11.000Z",
+    "options": "[{\"id\":\"done\",\"label\":\"Done\",\"input\":{\"kind\":\"text\",\"required\":false,\"max_length\":50}}]",
+    "outcome_posted_at": "2026-01-01T00:01:13.000Z",
+    "settled_at": null
+   },
+   {
+    "board_id": "brd_1",
+    "card_id": "crd_2",
+    "wait_id": "wt_2",
+    "room_id": "!r1:hs",
+    "event_id": "$w2",
+    "claimed_at": "2026-01-01T00:01:10.000Z",
+    "posted_at": "2026-01-01T00:01:12.000Z",
+    "options": "[]",
+    "outcome_posted_at": "2026-01-01T00:01:15.000Z",
+    "settled_at": "2026-01-01T00:01:15.000Z"
+   }
+  ],
+  "board_rooms": [
+   {
+    "board_id": "brd_1",
+    "room_id": "!r1:hs",
+    "alias": "#b1:hs",
+    "created_at": "2026-01-01T00:00:14.000Z",
+    "encrypted": 1
+   }
+  ],
+  "boards": [
+   {
+    "board_id": "brd_1",
+    "sp_tenant_id": "t_1",
+    "org_id": "org_1",
+    "invitees": "[\"@a:hs\",\"@b:hs\"]",
+    "enabled": 1,
+    "created_at": "2026-01-01T00:00:03.000Z",
+    "updated_at": "2026-01-01T00:00:04.000Z"
+   },
+   {
+    "board_id": "brd_2",
+    "sp_tenant_id": "t_1",
+    "org_id": "org_1",
+    "invitees": "[]",
+    "enabled": 0,
+    "created_at": "2026-01-01T00:00:05.000Z",
+    "updated_at": "2026-01-01T00:00:06.000Z"
+   }
+  ],
+  "checks_waiting": [
+   {
+    "board_id": "brd_1",
+    "arrival_id": "arr_1",
+    "card_id": "crd_1",
+    "card_title": "Ship it",
+    "stage_key": "review",
+    "stage_name": "Review",
+    "room_id": "!r1:hs",
+    "event_id": "$k1b",
+    "claimed_at": "2026-01-01T00:01:44.000Z",
+    "posted_at": "2026-01-01T00:01:47.000Z",
+    "closed_at": "2026-01-01T00:01:48.000Z"
+   },
+   {
+    "board_id": "brd_1",
+    "arrival_id": "arr_2",
+    "card_id": "crd_1",
+    "card_title": "Ship it",
+    "stage_key": "review",
+    "stage_name": null,
+    "room_id": "!r1:hs",
+    "event_id": null,
+    "claimed_at": "2026-01-01T00:01:46.000Z",
+    "posted_at": null,
+    "closed_at": null
+   }
+  ],
+  "crypto_devices": [
+   {
+    "user_id": "@bot:hs",
+    "device_id": "DEV3",
+    "created_at": "2026-01-01T00:01:51.000Z"
+   }
+  ],
+  "escalation_invites": [
+   {
+    "board_id": "brd_1",
+    "user_id": "@c:hs",
+    "room_id": "!r1:hs",
+    "invited_at": "2026-01-01T00:01:35.000Z",
+    "joined_at": "2026-01-01T00:01:39.000Z",
+    "reposted_at": null,
+    "repost_attempts": 2
+   },
+   {
+    "board_id": "brd_1",
+    "user_id": "@d:hs",
+    "room_id": "!r1:hs",
+    "invited_at": "2026-01-01T00:01:37.000Z",
+    "joined_at": "2026-01-01T00:01:41.000Z",
+    "reposted_at": "2026-01-01T00:01:43.000Z",
+    "repost_attempts": 0
+   }
+  ],
+  "followup_deliveries": [
+   {
+    "gate_id": "gte_f1",
+    "board_id": "brd_1",
+    "received_at": "2026-01-01T00:00:47.000Z",
+    "body": "{\"f\":1}",
+    "settled_at": null
+   },
+   {
+    "gate_id": "gte_f2",
+    "board_id": "brd_1",
+    "received_at": "2026-01-01T00:00:49.000Z",
+    "body": "{\"f\":3}",
+    "settled_at": null
+   },
+   {
+    "gate_id": "gte_f3",
+    "board_id": "brd_2",
+    "received_at": "2026-01-01T00:00:50.000Z",
+    "body": "{\"f\":4}",
+    "settled_at": "2026-01-01T00:00:51.000Z"
+   }
+  ],
+  "followup_events": [
+   {
+    "gate_id": "gte_f1",
+    "board_id": "brd_1",
+    "card_id": "crd_1",
+    "room_id": "!r1:hs",
+    "event_id": "$f1b",
+    "claimed_at": "2026-01-01T00:00:53.000Z",
+    "posted_at": "2026-01-01T00:00:56.000Z",
+    "options": "[{\"id\":\"retry\",\"label\":\"Retry\"}]",
+    "subject_preview_complete": null,
+    "outcome_posted_at": "2026-01-01T00:00:58.000Z",
+    "settled_at": null
+   },
+   {
+    "gate_id": "gte_f2",
+    "board_id": "brd_1",
+    "card_id": "crd_2",
+    "room_id": "!r1:hs",
+    "event_id": "$f2",
+    "claimed_at": "2026-01-01T00:00:55.000Z",
+    "posted_at": "2026-01-01T00:00:57.000Z",
+    "options": "[{\"id\":\"retry\",\"label\":\"Retry\"}]",
+    "subject_preview_complete": null,
+    "outcome_posted_at": "2026-01-01T00:01:00.000Z",
+    "settled_at": "2026-01-01T00:01:00.000Z"
+   }
+  ],
+  "gate_deliveries": [
+   {
+    "gate_id": "gte_1",
+    "board_id": "brd_1",
+    "received_at": "2026-01-01T00:00:08.000Z",
+    "body": "{\"n\":1}",
+    "settled_at": null
+   },
+   {
+    "gate_id": "gte_2",
+    "board_id": "brd_2",
+    "received_at": "2026-01-01T00:00:10.000Z",
+    "body": "{\"n\":3}",
+    "settled_at": null
+   },
+   {
+    "gate_id": "gte_3",
+    "board_id": "brd_1",
+    "received_at": "2026-01-01T00:00:11.000Z",
+    "body": "{\"n\":4}",
+    "settled_at": "2026-01-01T00:00:12.000Z"
+   }
+  ],
+  "gate_events": [
+   {
+    "gate_id": "gte_1",
+    "board_id": "brd_1",
+    "room_id": "!r1:hs",
+    "card_event_id": "$c1b",
+    "prose_event_id": "$p1b",
+    "claimed_at": "2026-01-01T00:00:19.000Z",
+    "posted_at": "2026-01-01T00:00:22.000Z",
+    "options": "[{\"id\":\"approve\",\"label\":\"Approve\",\"meaning\":\"approve\",\"needs_comment\":false}]",
+    "subject_id": "sub_1",
+    "subject_digest": "sha256:abc",
+    "subject_preview_complete": 1,
+    "variants": null,
+    "quorum": "{\"approvals\":[\"@a\",\"@b\"]}",
+    "outcome_claimed_at": null,
+    "outcome_posted_at": "2026-01-01T00:00:28.000Z",
+    "settled_at": null,
+    "settled_decision": null
+   },
+   {
+    "gate_id": "gte_2",
+    "board_id": "brd_1",
+    "room_id": "!r1:hs",
+    "card_event_id": "$c2",
+    "prose_event_id": null,
+    "claimed_at": "2026-01-01T00:00:21.000Z",
+    "posted_at": "2026-01-01T00:00:23.000Z",
+    "options": null,
+    "subject_id": null,
+    "subject_digest": null,
+    "subject_preview_complete": null,
+    "variants": null,
+    "quorum": null,
+    "outcome_claimed_at": "2026-01-01T00:00:30.000Z",
+    "outcome_posted_at": "2026-01-01T00:00:30.000Z",
+    "settled_at": "2026-01-01T00:00:30.000Z",
+    "settled_decision": "approve"
+   }
+  ],
+  "link_hints": [
+   {
+    "sender": "@a:hs",
+    "room_id": "!r1:hs",
+    "day": "2026-01-02"
+   }
+  ],
+  "notices": [
+   {
+    "notice_id": "ntc_1",
+    "notice": "escalated",
+    "board_id": "brd_1",
+    "card_id": "crd_1",
+    "decision_kind": "gate",
+    "decision_id": "gte_1",
+    "body": "{\"cardTitle\":\" Ship it \"}",
+    "received_at": "2026-01-01T00:01:17.000Z",
+    "room_id": "!r1:hs",
+    "reply_to": "$c1b",
+    "claimed_at": "2026-01-01T00:01:21.000Z",
+    "prose_event_id": "$n1",
+    "posted_at": "2026-01-01T00:01:24.000Z",
+    "dropped_at": null,
+    "reposted_at": "2026-01-01T00:01:33.000Z",
+    "card_moved_at": "2026-01-01T00:01:34.000Z"
+   },
+   {
+    "notice_id": "ntc_2",
+    "notice": "reminded",
+    "board_id": "brd_1",
+    "card_id": "crd_1",
+    "decision_kind": null,
+    "decision_id": null,
+    "body": "{}",
+    "received_at": "2026-01-01T00:01:19.000Z",
+    "room_id": "!r1:hs",
+    "reply_to": null,
+    "claimed_at": "2026-01-01T00:01:23.000Z",
+    "prose_event_id": null,
+    "posted_at": null,
+    "dropped_at": null,
+    "reposted_at": null,
+    "card_moved_at": null
+   },
+   {
+    "notice_id": "ntc_3",
+    "notice": "escalated",
+    "board_id": "brd_2",
+    "card_id": "crd_1",
+    "decision_kind": "gate",
+    "decision_id": "gte_1",
+    "body": "{\"cardTitle\":\" Ship it \"}",
+    "received_at": "2026-01-01T00:01:20.000Z",
+    "room_id": null,
+    "reply_to": null,
+    "claimed_at": null,
+    "prose_event_id": null,
+    "posted_at": null,
+    "dropped_at": "2026-01-01T00:01:26.000Z",
+    "reposted_at": null,
+    "card_moved_at": null
+   },
+   {
+    "notice_id": "ntc_9",
+    "notice": "escalated",
+    "board_id": "brd_1",
+    "card_id": "crd_1",
+    "decision_kind": "gate",
+    "decision_id": "gte_1",
+    "body": "{\"cardTitle\":\" Ship it \"}",
+    "received_at": "2026-01-01T00:01:28.000Z",
+    "room_id": "!r1:hs",
+    "reply_to": null,
+    "claimed_at": "2026-01-01T00:01:29.000Z",
+    "prose_event_id": null,
+    "posted_at": "2026-01-01T00:01:30.000Z",
+    "dropped_at": null,
+    "reposted_at": null,
+    "card_moved_at": null
+   }
+  ],
+  "pending_decrypts": [
+   {
+    "event_id": "$e3",
+    "room_id": "!r1:hs",
+    "event": "{\"type\":\"m.room.encrypted\",\"content\":{\"ciphertext\":\"x\"}}",
+    "first_seen_at": "2026-01-01T00:01:55.000Z"
+   }
+  ],
+  "question_deliveries": [
+   {
+    "elicitation_id": "elc_1",
+    "board_id": "brd_1",
+    "received_at": "2026-01-01T00:00:32.000Z",
+    "body": "{\"q\":1}",
+    "settled_at": null
+   },
+   {
+    "elicitation_id": "elc_2",
+    "board_id": "brd_1",
+    "received_at": "2026-01-01T00:00:34.000Z",
+    "body": "{\"q\":3}",
+    "settled_at": null
+   },
+   {
+    "elicitation_id": "elc_3",
+    "board_id": "brd_2",
+    "received_at": "2026-01-01T00:00:35.000Z",
+    "body": "{\"q\":4}",
+    "settled_at": "2026-01-01T00:00:36.000Z"
+   }
+  ],
+  "question_events": [
+   {
+    "elicitation_id": "elc_1",
+    "board_id": "brd_1",
+    "room_id": "!r1:hs",
+    "event_id": "$q1b",
+    "claimed_at": "2026-01-01T00:00:38.000Z",
+    "posted_at": "2026-01-01T00:00:41.000Z",
+    "options": "[{\"id\":\"yes\",\"label\":\"Yes\"}]",
+    "options_v2": "[{\"id\":\"yes\",\"label\":\"Yes\",\"meaning\":\"yes\",\"needs_comment\":false}]",
+    "free_text_max_length": 200,
+    "subject_id": null,
+    "subject_digest": null,
+    "subject_preview_complete": null,
+    "subject_expires_at": null,
+    "approval_request": 0,
+    "outcome_posted_at": "2026-01-01T00:00:43.000Z",
+    "settled_at": null
+   },
+   {
+    "elicitation_id": "elc_2",
+    "board_id": "brd_1",
+    "room_id": "!r1:hs",
+    "event_id": "$q2",
+    "claimed_at": "2026-01-01T00:00:40.000Z",
+    "posted_at": "2026-01-01T00:00:42.000Z",
+    "options": "[{\"id\":\"yes\",\"label\":\"Yes\"}]",
+    "options_v2": "[{\"id\":\"yes\",\"label\":\"Yes\",\"meaning\":\"yes\",\"needs_comment\":false}]",
+    "free_text_max_length": 200,
+    "subject_id": null,
+    "subject_digest": null,
+    "subject_preview_complete": null,
+    "subject_expires_at": null,
+    "approval_request": 0,
+    "outcome_posted_at": "2026-01-01T00:00:45.000Z",
+    "settled_at": "2026-01-01T00:00:45.000Z"
+   }
+  ],
+  "room_members": [
+   {
+    "room_id": "!r1:hs",
+    "user_id": "@b:hs",
+    "membership": "join",
+    "updated_at": "2026-01-01T00:00:18.000Z"
+   },
+   {
+    "room_id": "!r1:hs",
+    "user_id": "@a:hs",
+    "membership": "join",
+    "updated_at": "2026-01-01T00:00:17.000Z"
+   }
+  ]
+ }
+}
