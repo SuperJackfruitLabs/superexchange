@@ -23,6 +23,7 @@ export {
 export { GATE_PENDING_V1, intakeGate, type GateIntake } from "./gates.ts";
 export {
   createBoardChat,
+  gateOffer,
   gateTxnId,
   type BoardChat,
   type BoardChatDeps,
