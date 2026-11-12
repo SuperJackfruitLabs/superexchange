@@ -564,7 +564,7 @@ describe("migration 7: follow-ups and waiting cards", () => {
     db.close();
     const store = openStore(dir);
     cleanups.push(() => store.close());
-    expect(store.schemaVersion()).toBe(7);
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
     expect(store.questionDelivery("q1")?.boardId).toBe("brd_a");
     expect(store.recordFollowupDelivery("g1", "brd_a", { a: 1 })).toBe(true);
     expect(
@@ -631,5 +631,97 @@ describe("migration 7: follow-ups and waiting cards", () => {
     expect(store.attentionEvent(a)?.settledAt).not.toBeNull();
     expect(store.attentionEvent(b)).toBeNull();
     expect(store.postedAttentionAwaitingOutcome("brd_a")).toEqual([]);
+  });
+});
+
+describe("migration 8: board-room notices", () => {
+  test("a database at version 7 takes them, and keeps what it had", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 7));
+    db.exec(
+      "INSERT INTO followup_deliveries (gate_id, board_id, received_at, body) VALUES ('g1', 'brd_a', 't0', '{}')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(store.schemaVersion()).toBe(8);
+    expect(store.followupDelivery("g1")?.boardId).toBe("brd_a");
+  });
+
+  const input = {
+    noticeId: "n1",
+    notice: "reminded" as const,
+    boardId: "brd_a",
+    cardId: "c1",
+    decisionKind: "gate",
+    decisionId: "g1",
+    body: { cardTitle: "Ship it" },
+  };
+
+  test("a notice is recorded once, claimed once, and a claimed one is never dropped", () => {
+    const { store } = fresh();
+    expect(store.recordNotice(input)).toBe(true);
+    expect(store.recordNotice({ ...input, body: {} })).toBe(false);
+    expect(store.notice("n1")?.body).toEqual({ cardTitle: "Ship it" });
+    expect(store.unpostedNotices("brd_a").map((n) => n.noticeId)).toEqual([
+      "n1",
+    ]);
+    expect(store.claimNotice("n1", "!r:x", "$card")).toBe(true);
+    expect(store.claimNotice("n1", "!r:y", null)).toBe(false);
+    expect(store.dropNotice("n1")).toBe(false);
+    expect(store.notice("n1")?.replyTo).toBe("$card");
+    store.recordNoticePosted("n1");
+    expect(store.unpostedNotices()).toEqual([]);
+    expect(store.knownCardTitle("brd_a", "c1")).toBe("Ship it");
+    expect(store.recordNotice({ ...input, noticeId: "n2" })).toBe(true);
+    expect(store.dropNotice("n2")).toBe(true);
+    expect(store.claimNotice("n2", "!r:x", null)).toBe(false);
+  });
+
+  test("an invitee's join is recorded once, and owes its re-posts until they are done", () => {
+    const { store } = fresh();
+    expect(store.claimEscalationInvite("brd_a", "@b:x", "!r:x")).toBe(true);
+    expect(store.claimEscalationInvite("brd_a", "@b:x", "!r:x")).toBe(false);
+    expect(store.recordInviteJoined("brd_a", "@nobody:x")).toBeNull();
+    expect(store.recordInviteJoined("brd_a", "@b:x")?.userId).toBe("@b:x");
+    expect(store.recordInviteJoined("brd_a", "@b:x")).toBeNull();
+    expect(store.invitesOwingReposts(2)).toHaveLength(1);
+    store.countRepostAttempt("brd_a", "@b:x");
+    store.countRepostAttempt("brd_a", "@b:x");
+    expect(store.invitesOwingReposts(2)).toEqual([]);
+    expect(store.invitesOwingReposts(5)).toHaveLength(1);
+    store.recordInviteReposted("brd_a", "@b:x");
+    expect(store.invitesOwingReposts(5)).toEqual([]);
+    store.forgetEscalationInvite("brd_a", "@b:x");
+    expect(store.claimEscalationInvite("brd_a", "@b:x", "!r:x")).toBe(true);
+  });
+
+  test("a checks.waiting card is claimed once per arrival, found by its event, and moves only while open", () => {
+    const { store } = fresh();
+    const w = {
+      boardId: "brd_a",
+      arrivalId: "arr_1",
+      cardId: "c1",
+      cardTitle: "Ship it",
+      stageKey: "review",
+      stageName: null,
+      roomId: "!r:x",
+    };
+    expect(store.claimChecksWaiting(w)).toBe(true);
+    expect(store.claimChecksWaiting(w)).toBe(false);
+    expect(store.checksWaitingByEvent("$c")).toBeNull();
+    expect(store.openChecksWaiting("brd_a", "c1", "review", "!r:x")).toBeNull();
+    store.recordChecksWaitingPosted("brd_a", "arr_1", "$c");
+    expect(store.checksWaitingByEvent("$c")?.arrivalId).toBe("arr_1");
+    expect(store.moveChecksWaiting("brd_a", "arr_1", "$other", "$d")).toBe(
+      false,
+    );
+    expect(store.moveChecksWaiting("brd_a", "arr_1", "$c", "$d")).toBe(true);
+    expect(store.checksWaitingByEvent("$c")).toBeNull();
+    store.closeChecksWaiting("brd_a", "arr_1");
+    expect(store.openChecksWaiting("brd_a", "c1", "review", "!r:x")).toBeNull();
+    expect(store.moveChecksWaiting("brd_a", "arr_1", "$d", "$e")).toBe(false);
   });
 });
