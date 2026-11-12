@@ -237,7 +237,7 @@ function followupBody(): DeliveryPendingDelivery {
       },
     ],
     ts: T,
-  } as DeliveryPendingDelivery;
+  };
 }
 
 function attentionBody(): AttentionPendingDelivery {
@@ -264,7 +264,7 @@ function attentionBody(): AttentionPendingDelivery {
       },
     ],
     ts: T,
-  } as AttentionPendingDelivery;
+  };
 }
 
 // ── the harness ─────────────────────────────────────────────────────────────

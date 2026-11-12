@@ -3,11 +3,9 @@
     "eslint(no-console)": 11,
     "eslint(no-shadow)": 3,
     "typescript(consistent-return)": 3,
-    "typescript(consistent-type-imports)": 1,
     "typescript(no-misused-promises)": 2,
     "typescript(no-redundant-type-constituents)": 1,
-    "typescript(no-unnecessary-type-assertion)": 11,
-    "typescript(no-unsafe-type-assertion)": 56,
+    "typescript(no-unsafe-type-assertion)": 51,
     "typescript(unbound-method)": 5,
     "unicorn(consistent-function-scoping)": 10
   },
@@ -17,9 +15,8 @@
     "typescript(no-explicit-any)": 1,
     "typescript(no-floating-promises)": 3,
     "typescript(no-non-null-assertion)": 7,
-    "typescript(no-unnecessary-type-assertion)": 7,
     "typescript(no-unnecessary-type-conversion)": 2,
-    "typescript(no-unsafe-type-assertion)": 112,
+    "typescript(no-unsafe-type-assertion)": 109,
     "unicorn(consistent-function-scoping)": 18
   }
 }

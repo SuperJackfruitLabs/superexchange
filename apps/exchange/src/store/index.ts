@@ -85,7 +85,7 @@ export function openStore(
     // The path is a setting's value, and fs and SQLite errors quote it: only the code is kept.
     const code =
       typeof error === "object" && error !== null && "code" in error
-        ? String((error as { code: unknown }).code)
+        ? String(error.code)
         : "unknown";
     throw new StoreError(
       `the store cannot be opened in SUPEREXCHANGE_DATA_DIR (${code})`,
