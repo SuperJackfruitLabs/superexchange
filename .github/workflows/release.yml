@@ -28,10 +28,10 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      # fetch-depth 0 already brought origin/main. A second fetch would need credentials, which
+      # checkout does not keep, and this repository is private.
       - name: The tag is on main
-        run: |
-          git fetch --no-tags origin main
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
