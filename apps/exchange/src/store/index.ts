@@ -6,7 +6,8 @@
  * with what they offered, whether a person's answer to each has acted and its receipt been
  * posted, which gates the board says were decided elsewhere and settled here, the questions the
  * relay delivered and the ones posted (with what they offered, and whether their receipt has been
- * claimed), the speaker's encryption device, and encrypted events still waiting for their key.
+ * claimed), the delivery follow-ups and waiting cards likewise, the speaker's encryption device,
+ * and encrypted events still waiting for their key.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -129,6 +130,55 @@ export const MIGRATIONS: readonly string[] = [
    );
    CREATE INDEX question_events_room ON question_events (room_id);
    CREATE INDEX question_events_board ON question_events (board_id);`,
+  // Delivery follow-ups (delivery.pending, keyed by the gate they follow) and waiting cards
+  // (attention.pending, keyed by board, card and wait): what the relay or the sweep delivered, and
+  // each one posted into its room with what it offered, so an answer is judged against what was
+  // shown. Each is one event; `outcome_posted_at` is its one receipt, claimed by the answer path or
+  // by the sweep when the board no longer lists it.
+  `CREATE TABLE followup_deliveries (
+     gate_id TEXT PRIMARY KEY,
+     board_id TEXT NOT NULL,
+     received_at TEXT NOT NULL,
+     body TEXT NOT NULL,
+     settled_at TEXT
+   );
+   CREATE INDEX followup_deliveries_board ON followup_deliveries (board_id);
+   CREATE TABLE followup_events (
+     gate_id TEXT PRIMARY KEY,
+     board_id TEXT NOT NULL,
+     card_id TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     event_id TEXT,
+     claimed_at TEXT NOT NULL,
+     posted_at TEXT,
+     options TEXT NOT NULL,
+     subject_preview_complete INTEGER,
+     outcome_posted_at TEXT,
+     settled_at TEXT
+   );
+   CREATE INDEX followup_events_board ON followup_events (board_id);
+   CREATE TABLE attention_deliveries (
+     board_id TEXT NOT NULL,
+     card_id TEXT NOT NULL,
+     wait_id TEXT NOT NULL,
+     received_at TEXT NOT NULL,
+     body TEXT NOT NULL,
+     settled_at TEXT,
+     PRIMARY KEY (board_id, card_id, wait_id)
+   );
+   CREATE TABLE attention_events (
+     board_id TEXT NOT NULL,
+     card_id TEXT NOT NULL,
+     wait_id TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     event_id TEXT,
+     claimed_at TEXT NOT NULL,
+     posted_at TEXT,
+     options TEXT NOT NULL,
+     outcome_posted_at TEXT,
+     settled_at TEXT,
+     PRIMARY KEY (board_id, card_id, wait_id)
+   );`,
 ];
 
 export class StoreError extends Error {
@@ -298,6 +348,74 @@ export interface QuestionEvent {
   settledAt: string | null;
 }
 
+/**
+ * One option of a follow-up or a waiting card as it was posted (treaty's `DeliveryOptionV2`,
+ * `AttentionOptionV2`), kept to what an answer is judged against.
+ */
+export interface CardOfferOption {
+  id: string;
+  label: string;
+  input?: { kind: "text" | "url"; required: boolean; max_length: number };
+}
+
+/** What a delivery follow-up offered when it was posted. */
+export interface FollowupOffer {
+  options: CardOfferOption[];
+  /** Whether its subject's preview reached the room in full; anything but true refuses automatic. */
+  subjectPreviewComplete: boolean | null;
+}
+
+/** A follow-up's claim on its room, keyed by the gate it follows. No `eventId`: not yet posted. */
+export interface FollowupEvent {
+  gateId: string;
+  boardId: string;
+  cardId: string;
+  roomId: string;
+  /** The follow-up's message: the one event an answer may reference. */
+  eventId: string | null;
+  claimedAt: string;
+  postedAt: string | null;
+  offer: FollowupOffer;
+  /** Set once the receipt is claimed: a follow-up gets one. */
+  outcomePostedAt: string | null;
+  /** Set when the sweep claimed the receipt for a follow-up the board no longer owes. */
+  settledAt: string | null;
+}
+
+/** A delivered follow-up with no posted event yet. */
+export interface UnpostedFollowup {
+  gateId: string;
+  boardId: string;
+  body: unknown;
+}
+
+/** Which wait a waiting card is: a card that parks again is a new one. */
+export interface WaitKey {
+  boardId: string;
+  cardId: string;
+  waitId: string;
+}
+
+/** A waiting card's claim on its room. No `eventId`: not yet posted. */
+export interface AttentionEvent extends WaitKey {
+  roomId: string;
+  /** The card's message: the one event an answer may reference. */
+  eventId: string | null;
+  claimedAt: string;
+  postedAt: string | null;
+  /** What it offered when it was posted. */
+  options: CardOfferOption[];
+  /** Set once the receipt is claimed: a wait gets one. */
+  outcomePostedAt: string | null;
+  /** Set when the sweep claimed the receipt for a wait that ended elsewhere. */
+  settledAt: string | null;
+}
+
+/** A delivered waiting card with no posted event yet. */
+export interface UnpostedAttention extends WaitKey {
+  body: unknown;
+}
+
 /** A delivered question with no posted event yet. */
 export interface UnpostedQuestion {
   elicitationId: string;
@@ -442,6 +560,64 @@ export interface Store {
   settleQuestionEvent(elicitationId: string): boolean;
   /** A board's posted questions whose receipt is not claimed, oldest first. */
   postedQuestionsAwaitingOutcome(boardId: string): QuestionEvent[];
+
+  /** Record a delivered follow-up. True when new, false when this gate's was already recorded. */
+  recordFollowupDelivery(
+    gateId: string,
+    boardId: string,
+    body: unknown,
+  ): boolean;
+  /** The recorded body of a follow-up, and when it was settled (null while it is not), or null. */
+  followupDelivery(
+    gateId: string,
+  ): { boardId: string; body: unknown; settledAt: string | null } | null;
+  /** Delivered follow-ups not yet posted and not settled, oldest first; only `boardId`'s if given. */
+  unpostedFollowups(boardId?: string): UnpostedFollowup[];
+  /** Mark a delivered follow-up settled: never posted after this. True when this call did. */
+  settleFollowupDelivery(gateId: string): boolean;
+  /** Claim a follow-up's post into a room, recording what it offers. True when this call did. */
+  claimFollowupEvent(
+    gateId: string,
+    boardId: string,
+    cardId: string,
+    roomId: string,
+    offer: FollowupOffer,
+  ): boolean;
+  followupEvent(gateId: string): FollowupEvent | null;
+  /** Record the follow-up's message, and that it is posted. */
+  recordFollowupPosted(gateId: string, eventId: string): void;
+  /** Claim a posted follow-up's receipt before it is sent. True once per follow-up. */
+  claimFollowupReceipt(gateId: string): boolean;
+  /** The sweep's claim on a posted follow-up's receipt: true once, false once any is claimed. */
+  settleFollowupEvent(gateId: string): boolean;
+  /** A board's posted follow-ups whose receipt is not claimed, oldest first. */
+  postedFollowupsAwaitingOutcome(boardId: string): FollowupEvent[];
+
+  /** Record a delivered waiting card. True when new, false when this wait was already recorded. */
+  recordAttentionDelivery(key: WaitKey, body: unknown): boolean;
+  /** The recorded body of a waiting card, and when it was settled, or null. */
+  attentionDelivery(
+    key: WaitKey,
+  ): { body: unknown; settledAt: string | null } | null;
+  /** Delivered waiting cards not yet posted and not settled, oldest first; only `boardId`'s if given. */
+  unpostedAttention(boardId?: string): UnpostedAttention[];
+  /** Mark a delivered waiting card settled: never posted after this. True when this call did. */
+  settleAttentionDelivery(key: WaitKey): boolean;
+  /** Claim a waiting card's post into a room, recording what it offers. True when this call did. */
+  claimAttentionEvent(
+    key: WaitKey,
+    roomId: string,
+    options: CardOfferOption[],
+  ): boolean;
+  attentionEvent(key: WaitKey): AttentionEvent | null;
+  /** Record the waiting card's message, and that it is posted. */
+  recordAttentionPosted(key: WaitKey, eventId: string): void;
+  /** Claim a posted waiting card's receipt before it is sent. True once per wait. */
+  claimAttentionReceipt(key: WaitKey): boolean;
+  /** The sweep's claim on a posted waiting card's receipt: true once, false once any is claimed. */
+  settleAttentionEvent(key: WaitKey): boolean;
+  /** A board's posted waiting cards whose receipt is not claimed, oldest first. */
+  postedAttentionAwaitingOutcome(boardId: string): AttentionEvent[];
 
   /** The encryption device recorded for a user, or null. */
   cryptoDevice(userId: string): string | null;
@@ -942,6 +1118,263 @@ export function openStore(
         .map(toQuestionEvent);
     },
 
+    recordFollowupDelivery(gateId, boardId, body) {
+      return (
+        db
+          .query(
+            "INSERT INTO followup_deliveries (gate_id, board_id, received_at, body) VALUES (?, ?, ?, ?) ON CONFLICT (gate_id) DO NOTHING",
+          )
+          .run(gateId, boardId, stamp(), JSON.stringify(body)).changes === 1
+      );
+    },
+
+    followupDelivery(gateId) {
+      const row = db
+        .query<
+          { board_id: string; body: string; settled_at: string | null },
+          [string]
+        >("SELECT board_id, body, settled_at FROM followup_deliveries WHERE gate_id = ?")
+        .get(gateId);
+      return row
+        ? {
+            boardId: row.board_id,
+            body: JSON.parse(row.body) as unknown,
+            settledAt: row.settled_at,
+          }
+        : null;
+    },
+
+    unpostedFollowups(boardId) {
+      return db
+        .query<
+          { gate_id: string; board_id: string; body: string },
+          [string | null, string | null]
+        >(
+          `SELECT d.gate_id, d.board_id, d.body FROM followup_deliveries d
+           LEFT JOIN followup_events e ON e.gate_id = d.gate_id
+           WHERE e.posted_at IS NULL AND d.settled_at IS NULL
+             AND (?1 IS NULL OR d.board_id = ?2)
+           ORDER BY d.received_at, d.gate_id`,
+        )
+        .all(boardId ?? null, boardId ?? null)
+        .map((row) => ({
+          gateId: row.gate_id,
+          boardId: row.board_id,
+          body: JSON.parse(row.body) as unknown,
+        }));
+    },
+
+    settleFollowupDelivery(gateId) {
+      return (
+        db
+          .query(
+            "UPDATE followup_deliveries SET settled_at = ? WHERE gate_id = ? AND settled_at IS NULL",
+          )
+          .run(stamp(), gateId).changes === 1
+      );
+    },
+
+    claimFollowupEvent(gateId, boardId, cardId, roomId, offer) {
+      return (
+        db
+          .query(
+            `INSERT INTO followup_events (gate_id, board_id, card_id, room_id, claimed_at, options,
+               subject_preview_complete)
+             VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (gate_id) DO NOTHING`,
+          )
+          .run(
+            gateId,
+            boardId,
+            cardId,
+            roomId,
+            stamp(),
+            JSON.stringify(offer.options),
+            offer.subjectPreviewComplete === null
+              ? null
+              : offer.subjectPreviewComplete
+                ? 1
+                : 0,
+          ).changes === 1
+      );
+    },
+
+    followupEvent(gateId) {
+      const row = db
+        .query<
+          FollowupEventRow,
+          [string]
+        >("SELECT * FROM followup_events WHERE gate_id = ?")
+        .get(gateId);
+      return row ? toFollowupEvent(row) : null;
+    },
+
+    recordFollowupPosted(gateId, eventId) {
+      db.query(
+        "UPDATE followup_events SET event_id = ?, posted_at = ? WHERE gate_id = ?",
+      ).run(eventId, stamp(), gateId);
+    },
+
+    claimFollowupReceipt(gateId) {
+      return (
+        db
+          .query(
+            "UPDATE followup_events SET outcome_posted_at = ? WHERE gate_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL",
+          )
+          .run(stamp(), gateId).changes === 1
+      );
+    },
+
+    settleFollowupEvent(gateId) {
+      return (
+        db
+          .query(
+            "UPDATE followup_events SET outcome_posted_at = ?1, settled_at = ?1 WHERE gate_id = ?2 AND posted_at IS NOT NULL AND outcome_posted_at IS NULL",
+          )
+          .run(stamp(), gateId).changes === 1
+      );
+    },
+
+    postedFollowupsAwaitingOutcome(boardId) {
+      return db
+        .query<FollowupEventRow, [string]>(
+          `SELECT * FROM followup_events
+           WHERE board_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL
+           ORDER BY posted_at, rowid`,
+        )
+        .all(boardId)
+        .map(toFollowupEvent);
+    },
+
+    recordAttentionDelivery(key, body) {
+      return (
+        db
+          .query(
+            `INSERT INTO attention_deliveries (board_id, card_id, wait_id, received_at, body)
+             VALUES (?, ?, ?, ?, ?) ON CONFLICT (board_id, card_id, wait_id) DO NOTHING`,
+          )
+          .run(
+            key.boardId,
+            key.cardId,
+            key.waitId,
+            stamp(),
+            JSON.stringify(body),
+          ).changes === 1
+      );
+    },
+
+    attentionDelivery(key) {
+      const row = db
+        .query<
+          { body: string; settled_at: string | null },
+          [string, string, string]
+        >("SELECT body, settled_at FROM attention_deliveries WHERE board_id = ? AND card_id = ? AND wait_id = ?")
+        .get(key.boardId, key.cardId, key.waitId);
+      return row
+        ? { body: JSON.parse(row.body) as unknown, settledAt: row.settled_at }
+        : null;
+    },
+
+    unpostedAttention(boardId) {
+      return db
+        .query<
+          { board_id: string; card_id: string; wait_id: string; body: string },
+          [string | null, string | null]
+        >(
+          `SELECT d.board_id, d.card_id, d.wait_id, d.body FROM attention_deliveries d
+           LEFT JOIN attention_events e
+             ON e.board_id = d.board_id AND e.card_id = d.card_id AND e.wait_id = d.wait_id
+           WHERE e.posted_at IS NULL AND d.settled_at IS NULL
+             AND (?1 IS NULL OR d.board_id = ?2)
+           ORDER BY d.received_at, d.board_id, d.card_id, d.wait_id`,
+        )
+        .all(boardId ?? null, boardId ?? null)
+        .map((row) => ({
+          boardId: row.board_id,
+          cardId: row.card_id,
+          waitId: row.wait_id,
+          body: JSON.parse(row.body) as unknown,
+        }));
+    },
+
+    settleAttentionDelivery(key) {
+      return (
+        db
+          .query(
+            "UPDATE attention_deliveries SET settled_at = ? WHERE board_id = ? AND card_id = ? AND wait_id = ? AND settled_at IS NULL",
+          )
+          .run(stamp(), key.boardId, key.cardId, key.waitId).changes === 1
+      );
+    },
+
+    claimAttentionEvent(key, roomId, options) {
+      return (
+        db
+          .query(
+            `INSERT INTO attention_events (board_id, card_id, wait_id, room_id, claimed_at, options)
+             VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (board_id, card_id, wait_id) DO NOTHING`,
+          )
+          .run(
+            key.boardId,
+            key.cardId,
+            key.waitId,
+            roomId,
+            stamp(),
+            JSON.stringify(options),
+          ).changes === 1
+      );
+    },
+
+    attentionEvent(key) {
+      const row = db
+        .query<
+          AttentionEventRow,
+          [string, string, string]
+        >("SELECT * FROM attention_events WHERE board_id = ? AND card_id = ? AND wait_id = ?")
+        .get(key.boardId, key.cardId, key.waitId);
+      return row ? toAttentionEvent(row) : null;
+    },
+
+    recordAttentionPosted(key, eventId) {
+      db.query(
+        "UPDATE attention_events SET event_id = ?, posted_at = ? WHERE board_id = ? AND card_id = ? AND wait_id = ?",
+      ).run(eventId, stamp(), key.boardId, key.cardId, key.waitId);
+    },
+
+    claimAttentionReceipt(key) {
+      return (
+        db
+          .query(
+            `UPDATE attention_events SET outcome_posted_at = ?
+             WHERE board_id = ? AND card_id = ? AND wait_id = ?
+               AND posted_at IS NOT NULL AND outcome_posted_at IS NULL`,
+          )
+          .run(stamp(), key.boardId, key.cardId, key.waitId).changes === 1
+      );
+    },
+
+    settleAttentionEvent(key) {
+      return (
+        db
+          .query(
+            `UPDATE attention_events SET outcome_posted_at = ?1, settled_at = ?1
+             WHERE board_id = ?2 AND card_id = ?3 AND wait_id = ?4
+               AND posted_at IS NOT NULL AND outcome_posted_at IS NULL`,
+          )
+          .run(stamp(), key.boardId, key.cardId, key.waitId).changes === 1
+      );
+    },
+
+    postedAttentionAwaitingOutcome(boardId) {
+      return db
+        .query<AttentionEventRow, [string]>(
+          `SELECT * FROM attention_events
+           WHERE board_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL
+           ORDER BY posted_at, rowid`,
+        )
+        .all(boardId)
+        .map(toAttentionEvent);
+    },
+
     cryptoDevice(userId) {
       const row = db
         .query<
@@ -1122,6 +1555,65 @@ const toQuestionEvent = (row: QuestionEventRow): QuestionEvent => ({
           },
     approvalRequest: row.approval_request === 1,
   },
+  outcomePostedAt: row.outcome_posted_at,
+  settledAt: row.settled_at,
+});
+
+interface FollowupEventRow {
+  gate_id: string;
+  board_id: string;
+  card_id: string;
+  room_id: string;
+  event_id: string | null;
+  claimed_at: string;
+  posted_at: string | null;
+  options: string;
+  subject_preview_complete: number | null;
+  outcome_posted_at: string | null;
+  settled_at: string | null;
+}
+
+const toFollowupEvent = (row: FollowupEventRow): FollowupEvent => ({
+  gateId: row.gate_id,
+  boardId: row.board_id,
+  cardId: row.card_id,
+  roomId: row.room_id,
+  eventId: row.event_id,
+  claimedAt: row.claimed_at,
+  postedAt: row.posted_at,
+  offer: {
+    options: JSON.parse(row.options) as CardOfferOption[],
+    subjectPreviewComplete:
+      row.subject_preview_complete === null
+        ? null
+        : row.subject_preview_complete === 1,
+  },
+  outcomePostedAt: row.outcome_posted_at,
+  settledAt: row.settled_at,
+});
+
+interface AttentionEventRow {
+  board_id: string;
+  card_id: string;
+  wait_id: string;
+  room_id: string;
+  event_id: string | null;
+  claimed_at: string;
+  posted_at: string | null;
+  options: string;
+  outcome_posted_at: string | null;
+  settled_at: string | null;
+}
+
+const toAttentionEvent = (row: AttentionEventRow): AttentionEvent => ({
+  boardId: row.board_id,
+  cardId: row.card_id,
+  waitId: row.wait_id,
+  roomId: row.room_id,
+  eventId: row.event_id,
+  claimedAt: row.claimed_at,
+  postedAt: row.posted_at,
+  options: JSON.parse(row.options) as CardOfferOption[],
   outcomePostedAt: row.outcome_posted_at,
   settledAt: row.settled_at,
 });
