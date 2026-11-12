@@ -51,11 +51,17 @@ export interface Config {
   /** The SHA-256 of the operator's bearer token, 64 lowercase hex digits. */
   operatorTokenSha256: string;
   /**
-   * Whether board rooms may be made and posted into without end-to-end encryption
-   * (`SUPEREXCHANGE_PLAINTEXT_ROOMS`). Staging only, and only until SuperExchange encrypts: off,
-   * nothing is posted at all.
+   * Whether new board rooms are made without end-to-end encryption, and rooms made so may be
+   * posted into (`SUPEREXCHANGE_PLAINTEXT_ROOMS`). Staging only. Off (the default), new rooms are
+   * encrypted and a plaintext room made earlier is left as it is.
    */
   plaintextRooms: boolean;
+  /**
+   * The passphrase the speaker's crypto store is encrypted with
+   * (`SUPEREXCHANGE_CRYPTO_PASSPHRASE`); null when unset, and then nothing is encrypted or
+   * decrypted. Required while plaintext rooms are off.
+   */
+  cryptoPassphrase: string | null;
   /** The organization plane's URL. */
   orgPlaneUrl: string;
   /** This service's credential at the organization plane. */
@@ -79,6 +85,9 @@ const SERVICE_CREDENTIAL = /^(svc_[0-9a-f]{20}):(\S+)$/;
  * one.
  */
 export const PLAINTEXT_SERVER_PREFIX = "staging-";
+
+/** The shortest crypto store passphrase accepted, in characters. */
+export const MIN_CRYPTO_PASSPHRASE = 32;
 
 export class ConfigError extends Error {
   constructor(readonly problems: string[]) {
@@ -165,6 +174,23 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     );
   }
 
+  // Not trimmed: a passphrase is used exactly as given. Never quoted in a problem.
+  const rawPassphrase = env.SUPEREXCHANGE_CRYPTO_PASSPHRASE ?? "";
+  let cryptoPassphrase: string | null = null;
+  if (rawPassphrase.trim() === "") {
+    if (!plaintextRooms) {
+      problems.push(
+        "SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set, and board rooms are encrypted while SUPEREXCHANGE_PLAINTEXT_ROOMS is off",
+      );
+    }
+  } else if (rawPassphrase.length < MIN_CRYPTO_PASSPHRASE) {
+    problems.push(
+      `SUPEREXCHANGE_CRYPTO_PASSPHRASE is shorter than ${MIN_CRYPTO_PASSPHRASE} characters`,
+    );
+  } else {
+    cryptoPassphrase = rawPassphrase;
+  }
+
   let port = DEFAULT_PORT;
   const rawPort = env.PORT?.trim();
   if (rawPort) {
@@ -185,6 +211,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     dataDir,
     operatorTokenSha256,
     plaintextRooms,
+    cryptoPassphrase,
     orgPlaneUrl,
     orgPlaneCredential: {
       id: credential?.[1] ?? "",

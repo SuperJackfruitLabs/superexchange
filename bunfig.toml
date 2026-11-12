@@ -1,0 +1,2 @@
+[test]
+preload = ["./apps/exchange/test/preload.ts"]

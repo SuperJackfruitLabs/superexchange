@@ -14,10 +14,11 @@
  *
  * The order of a post:
  *
- * 1. Fail closed on encryption. Board rooms are encrypted (charter) and this service cannot
- *    encrypt yet, so nothing is made or posted unless `SUPEREXCHANGE_PLAINTEXT_ROOMS` is on
- *    (staging only). The gate stays recorded and unposted; the refusal is logged once per board.
- * 2. The board's room, made once (`rooms.ts`).
+ * 1. The board's room, made once (`rooms.ts`): encrypted, unless `SUPEREXCHANGE_PLAINTEXT_ROOMS`
+ *    is on (staging only).
+ * 2. Fail closed on encryption (`room-sender.ts`): a room made in plaintext is not posted into
+ *    while plaintext rooms are off, and an encrypted room is not posted into without the
+ *    speaker's keys. The gate stays recorded and unposted; the refusal is logged once per board.
  * 3. Held until a person has joined: no claim is taken, so the next join or boot posts it.
  * 4. The claim: a `gate_events` row inserted or ignored, before anything is sent. A gate that is
  *    already posted is never sent again.
@@ -28,6 +29,15 @@
  *
  * Posts run one at a time, in arrival order, off the request that caused them: neither the relay
  * nor the homeserver's transaction waits on a post.
+ *
+ * The way in: an encrypted event in a board room, from a person, is decrypted before anything
+ * reads it (the hub's `asPlaintext`), then read like any other: a gate answer is carried. One
+ * whose key has not arrived yet waits, still encrypted, in the store (`pending_decrypts`; the
+ * hub's `pending-decrypts.ts`): the homeserver has been told the transaction was applied and
+ * never sends it again, so an event held in memory would be lost by any restart. It is tried
+ * again after every transaction that brought keys and at boot, given up after
+ * `PENDING_TTL_MS`, and at most `PENDING_MAX` wait. Parking is logged once per event, without
+ * its content.
  */
 import {
   GATE_EVENT_TYPE,
@@ -42,14 +52,21 @@ import {
   quorumV2,
   type GatePendingDelivery,
 } from "@superjackfruitlabs/treaty-matrix-events";
-import type {
-  AppserviceClient,
-  EventsHandler,
-  MatrixEvent,
+import {
+  ENCRYPTED_EVENT_TYPE,
+  type EventsHandler,
+  type MatrixEvent,
+  type RoomCrypto,
 } from "../appservice/index.ts";
-import type { GateOffer, Store } from "../store/index.ts";
+import type { BoardRoom, GateOffer, Store } from "../store/index.ts";
 import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
+import type { RoomRefusal, RoomSender } from "./room-sender.ts";
 import { describe, type BoardRooms } from "./rooms.ts";
+
+/** How long an encrypted event may wait for its key before it is given up on. */
+export const PENDING_TTL_MS = 60 * 60_000;
+/** At most this many wait: a room whose keys never come must not grow the table without end. */
+export const PENDING_MAX = 200;
 
 /** The event type of the prose message. */
 const MESSAGE = "m.room.message";
@@ -102,7 +119,7 @@ export type PostOutcome =
     }
   | { status: "already" }
   | { status: "held"; roomId: string }
-  | { status: "refused"; reason: "plaintext rooms off" }
+  | { status: "refused"; reason: RoomRefusal }
   | {
       status: "skipped";
       reason:
@@ -125,14 +142,20 @@ export interface BoardChatDeps {
     | "gateEvent"
     | "recordGateProse"
     | "recordGatePosted"
+    | "boardRoom"
+    | "parkPendingDecrypt"
+    | "pendingDecrypts"
+    | "claimPendingDecrypt"
   >;
-  client: Pick<AppserviceClient, "sendEvent">;
+  /** Speaks in board rooms, encrypted where the room is (`room-sender.ts`). */
+  sender: RoomSender;
   rooms: BoardRooms;
-  /** `SUPEREXCHANGE_PLAINTEXT_ROOMS`: off, nothing is made or posted. */
-  plaintextRooms: boolean;
+  /** The speaker's encryption, for events coming in; null, an encrypted event is not read. */
+  crypto: RoomCrypto | null;
   /** People's answers to the gates posted here (`gate-answer.ts`); absent, none is read. */
   answers?: GateAnswers;
   log: (line: string) => void;
+  now?: () => Date;
 }
 
 export interface BoardChat {
@@ -150,12 +173,18 @@ export interface BoardChat {
   onEvents: EventsHandler;
   /** Carry one answer, queued behind every post and answer before it. */
   answer(event: MatrixEvent): Promise<AnswerOutcome | null>;
+  /**
+   * Try every encrypted event waiting for its key again: after a transaction brought keys, and
+   * at boot. Settles when the try is done (answers it found are queued, not awaited).
+   */
+  retryPending(): Promise<void>;
   /** Settles when every queued post has run. */
   idle(): Promise<void>;
 }
 
 export function createBoardChat(deps: BoardChatDeps): BoardChat {
-  const { store, client, rooms, log } = deps;
+  const { store, sender, rooms, log } = deps;
+  const now = deps.now ?? (() => new Date());
   const refusedBoards = new Set<string>();
   let queue: Promise<unknown> = Promise.resolve();
 
@@ -181,14 +210,28 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     const claimed = store.gateEvent(gateId);
     if (claimed?.postedAt) return { status: "already" };
 
-    if (!deps.plaintextRooms) {
-      if (!refusedBoards.has(board.boardId)) {
-        refusedBoards.add(board.boardId);
+    /** Null when the room may be spoken in; else the refusal, logged once per board and reason. */
+    const refuse = (room: Pick<BoardRoom, "encrypted">): PostOutcome | null => {
+      const reason = sender.refusal(room);
+      if (reason === null) return null;
+      const key = `${board.boardId}\u0000${reason}`;
+      if (!refusedBoards.has(key)) {
+        refusedBoards.add(key);
         log(
-          `board-chat: ${board.boardId} has gates to post, and end-to-end encryption is not available yet: nothing is posted while SUPEREXCHANGE_PLAINTEXT_ROOMS is off`,
+          reason === "plaintext room"
+            ? `board-chat: ${board.boardId}'s room was made without encryption and is left as it is: nothing is posted into it while SUPEREXCHANGE_PLAINTEXT_ROOMS is off`
+            : `board-chat: ${board.boardId}'s room is encrypted and the speaker has no keys (SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set): nothing is posted into it`,
         );
       }
-      return { status: "refused", reason: "plaintext rooms off" };
+      return { status: "refused", reason };
+    };
+
+    const known = claimed
+      ? store.boardRoomByRoomId(claimed.roomId)
+      : store.boardRoom(board.boardId);
+    if (known) {
+      const refused = refuse(known);
+      if (refused) return refused;
     }
 
     let roomId: string;
@@ -198,8 +241,10 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
       roomId = claimed.roomId;
     } else {
       try {
-        roomId = (await rooms.ensure(board, gate.boardName ?? undefined))
-          .roomId;
+        const room = await rooms.ensure(board, gate.boardName ?? undefined);
+        const refused = refuse(room);
+        if (refused) return refused;
+        roomId = room.roomId;
       } catch (error) {
         log(
           `board-chat: gate ${JSON.stringify(gateId)} has no room on ${board.boardId} (${describe(error)})`,
@@ -231,7 +276,7 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     try {
       let proseEventId = claim.proseEventId;
       if (proseEventId === null) {
-        proseEventId = await client.sendEvent(
+        proseEventId = await sender.sendEvent(
           rooms.speaker,
           roomId,
           MESSAGE,
@@ -243,7 +288,7 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
         );
         store.recordGateProse(gateId, proseEventId);
       }
-      const cardEventId = await client.sendEvent(
+      const cardEventId = await sender.sendEvent(
         rooms.speaker,
         roomId,
         GATE_EVENT_TYPE,
@@ -280,19 +325,117 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     for (const gate of store.unpostedGates(boardId)) void post(gate.gateId);
   };
 
+  /** What a decrypted event is read as: an answer is carried; nothing else is read yet. */
+  function read(event: MatrixEvent): void {
+    if (answers?.isAnswer(event)) void answer(event);
+  }
+
+  /**
+   * The board room an encrypted event is in, when it is one this service may read: a person's,
+   * in a room it owns. Its own events and anybody else's rooms are not its to decrypt.
+   */
+  function encryptedInBoardRoom(event: MatrixEvent): BoardRoom | null {
+    const { room_id: roomId, sender: from } = event;
+    if (typeof roomId !== "string" || typeof from !== "string") return null;
+    if (!rooms.isPerson(from)) return null;
+    return store.boardRoomByRoomId(roomId);
+  }
+
+  /** The event's own parts over its envelope, or null when its key is not here. */
+  async function decrypted(event: MatrixEvent): Promise<MatrixEvent | null> {
+    if (deps.crypto === null) return null;
+    let plain;
+    try {
+      plain = await deps.crypto.decrypt(event);
+    } catch (error) {
+      log(
+        `board-chat: an encrypted event could not be decrypted (${describe(error)})`,
+      );
+      return null;
+    }
+    return plain === null
+      ? null
+      : { ...event, type: plain.type, content: plain.content };
+  }
+
+  async function inbound(event: MatrixEvent, room: BoardRoom): Promise<void> {
+    const plain = await decrypted(event);
+    if (plain !== null) return read(plain);
+    const eventId = event.event_id;
+    if (typeof eventId !== "string" || typeof event.room_id !== "string")
+      return;
+    if (
+      store.parkPendingDecrypt(
+        eventId,
+        event.room_id,
+        { ...event },
+        PENDING_MAX,
+      )
+    ) {
+      log(
+        `board-chat: an encrypted event in the room of ${room.boardId} cannot be decrypted yet; it waits for its key`,
+      );
+    }
+  }
+
+  // Incoming encrypted events and retries share one chain, in arrival order: a retry after keys
+  // arrived runs after every event that came before it has been parked.
+  let incoming: Promise<unknown> = Promise.resolve();
+  function inOrder<T>(work: () => Promise<T>): Promise<T> {
+    const run = incoming.then(work);
+    incoming = run.catch(() => undefined);
+    return run;
+  }
+
+  function retryPending(): Promise<void> {
+    return inOrder(async () => {
+      for (const row of store.pendingDecrypts()) {
+        const waited = now().getTime() - Date.parse(row.firstSeenAt);
+        if (!(waited <= PENDING_TTL_MS)) {
+          if (store.claimPendingDecrypt(row.eventId)) {
+            const room = store.boardRoomByRoomId(row.roomId);
+            log(
+              `board-chat: an encrypted event in the room of ${room?.boardId ?? "a board no longer here"} never got its key; given up`,
+            );
+          }
+          continue;
+        }
+        const plain = await decrypted(row.event as MatrixEvent);
+        if (plain === null) continue;
+        // Taken off the list before it is read, so two retries never act on it twice.
+        if (!store.claimPendingDecrypt(row.eventId)) continue;
+        read(plain);
+      }
+    });
+  }
+
   return {
     post,
     gateAccepted: (gateId) => void post(gateId),
     answer,
+    retryPending,
     resume: () => {
       answers?.resume();
       postAll();
+      void retryPending().catch((error: unknown) =>
+        log(
+          `board-chat: waiting encrypted events could not be retried (${describe(error)})`,
+        ),
+      );
     },
-    idle: () => queue.then(() => undefined),
+    // Incoming first: it may queue answers behind the posts.
+    idle: () => incoming.then(() => queue).then(() => undefined),
 
     onEvents(_txnId, events) {
       const woken = new Set<string>();
       for (const event of events) {
+        // Decrypted before anything reads it: on the wire every encrypted event has this one
+        // type, whatever it turns out to be.
+        if (event.type === ENCRYPTED_EVENT_TYPE) {
+          const room = encryptedInBoardRoom(event);
+          if (room !== null) void inOrder(() => inbound(event, room));
+          continue;
+        }
         // A decision, before anything else: it answers the board, and nothing else may read it.
         if (answers?.isAnswer(event)) {
           void answer(event);

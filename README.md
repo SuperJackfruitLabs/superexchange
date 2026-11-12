@@ -32,11 +32,23 @@ and one receipt is posted (a prose line and `dev.superpipeline.gate.outcome.v1`)
 once: a repeat is told the gate was already decided. Questions, follow-ups, waiting cards and the
 sweeps move here from the AgentPod hub in later steps.
 
-**Nothing is encrypted yet.** Board rooms are end-to-end encrypted, and SuperExchange cannot
-encrypt until a later step. Until then it makes and posts into no room at all, unless
-`SUPEREXCHANGE_PLAINTEXT_ROOMS=on`, which makes plaintext rooms and is refused on any homeserver
-whose server name does not start with `staging-`. It is a staging-only switch, and it is removed
-when encryption arrives.
+**Board rooms are end-to-end encrypted, with SuperExchange's own keys.** The speaker has one
+device, taken once from an appservice login and recorded in the store, so a restart reuses it;
+its keys live in an on-disk store under `SUPEREXCHANGE_DATA_DIR/crypto/`, encrypted with
+`SUPEREXCHANGE_CRYPTO_PASSPHRASE`. Back that directory up with the database: lose it and the
+speaker loses every room key it holds. A new board room is made with `m.room.encryption`
+(Megolm); the gate, its prose, replies and receipts are encrypted to everyone joined or invited.
+A person's encrypted answer is decrypted before it is read; one whose key has not arrived yet
+waits in the store, still encrypted, is tried again whenever keys arrive and at boot, and is given
+up after an hour. The homeserver's registration needs `de.sorunome.msc2409.push_ephemeral: true`
+and `org.matrix.msc3202: true` (to-device events, device lists and key counts in transactions),
+and `io.element.msc4190: false` (it turns appservice login off).
+
+`SUPEREXCHANGE_PLAINTEXT_ROOMS=on` makes new rooms in plaintext instead, and is refused on any
+homeserver whose server name does not start with `staging-`. A room keeps what it was made as:
+an encrypted room never gets plaintext, and a room made in plaintext (staging, before encryption)
+is left as it is. With the switch off nothing is posted into such a room, encrypted or not; that
+board's chat comes back when it is re-opted in for a new room (not built yet).
 
 | Route                                                | Who calls it   | What it does                                      |
 | ---------------------------------------------------- | -------------- | ------------------------------------------------- |
@@ -58,25 +70,27 @@ TREATY_RELAY_DELIVERY_SECRET=… \
 SUPEREXCHANGE_OPERATOR_TOKEN_SHA256=$(printf %s "$OPERATOR_TOKEN" | shasum -a 256 | cut -d' ' -f1) \
 SUPEREXCHANGE_DATA_DIR=$PWD/.data \
 ORG_PLANE_URL=https://accounts.example ORG_PLANE_SERVICE_CREDENTIAL=svc_…:… \
+SUPEREXCHANGE_CRYPTO_PASSPHRASE=$(openssl rand -base64 32) \
 SUPERPIPELINE_URL=https://pipeline.example \
 bun apps/exchange/src/main.ts
 curl http://127.0.0.1:8080/healthz
 ```
 
-| Setting                               | What it is                                                                  |
-| ------------------------------------- | --------------------------------------------------------------------------- |
-| `MATRIX_HOMESERVER_URL`               | Where the homeserver's client-server API answers                            |
-| `MATRIX_SERVER_NAME`                  | The homeserver's server name                                                |
-| `MATRIX_AS_TOKEN`                     | The `as_token` of this appservice's registration                            |
-| `MATRIX_HS_TOKEN`                     | The `hs_token` of this appservice's registration                            |
-| `TREATY_RELAY_DELIVERY_SECRET`        | The secret the event relay signs its deliveries to this service             |
-| `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256` | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards` |
-| `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset             |
-| `PORT`                                | Where it listens; 8080 when unset                                           |
-| `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                           |
-| `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                             |
-| `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                    |
-| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved; also the assertion audience  |
+| Setting                               | What it is                                                                                                                       |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `MATRIX_HOMESERVER_URL`               | Where the homeserver's client-server API answers                                                                                 |
+| `MATRIX_SERVER_NAME`                  | The homeserver's server name                                                                                                     |
+| `MATRIX_AS_TOKEN`                     | The `as_token` of this appservice's registration                                                                                 |
+| `MATRIX_HS_TOKEN`                     | The `hs_token` of this appservice's registration                                                                                 |
+| `TREATY_RELAY_DELIVERY_SECRET`        | The secret the event relay signs its deliveries to this service                                                                  |
+| `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256` | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards`                                                      |
+| `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset                                                                  |
+| `PORT`                                | Where it listens; 8080 when unset                                                                                                |
+| `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                                                                                |
+| `SUPEREXCHANGE_CRYPTO_PASSPHRASE`     | At least 32 characters; encrypts the speaker's crypto store. Required while plaintext rooms are off; unset, nothing is encrypted |
+| `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                                                                                  |
+| `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                                                                         |
+| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved; also the assertion audience                                                       |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 

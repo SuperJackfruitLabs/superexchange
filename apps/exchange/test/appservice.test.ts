@@ -4,6 +4,8 @@ import {
   countEventTypes,
   createAppserviceHandler,
   createClient,
+  createCryptoTransport,
+  type CryptoTransaction,
   type MatrixEvent,
 } from "../src/appservice/index.ts";
 import { HS_TOKEN, captureLog, tempStore } from "./helpers.ts";
@@ -442,5 +444,212 @@ describe("the client-server client", () => {
     await expect(
       empty.c.sendEvent(SPEAKER, "!r:x", "t", "txn", {}),
     ).rejects.toBeInstanceOf(MatrixClientError);
+  });
+});
+
+describe("a transaction's crypto parts", () => {
+  function cryptoSetup(onCrypto?: (tx: CryptoTransaction) => void) {
+    const t = tempStore();
+    cleanups.push(t.cleanup);
+    const order: string[] = [];
+    const fed: CryptoTransaction[] = [];
+    const { log, lines } = captureLog();
+    const handle = createAppserviceHandler({
+      hsToken: HS_TOKEN,
+      store: t.store,
+      onEvents: () => void order.push("events"),
+      onCrypto:
+        onCrypto ??
+        ((tx) => {
+          order.push("crypto");
+          fed.push(tx);
+        }),
+      log,
+    });
+    return { handle, order, fed, lines };
+  }
+  const KEYS = {
+    events: [EVENT],
+    "de.sorunome.msc2409.to_device": [
+      { type: "m.room.encrypted", sender: "@ana:example.test", content: {} },
+    ],
+    "org.matrix.msc3202.device_one_time_keys_count": {
+      "@superexchange_board:example.test": { D: { signed_curve25519: 10 } },
+    },
+  };
+
+  test("are fed before the events, and again on a repeat the events are not", async () => {
+    const s = cryptoSetup();
+    await s.handle(put("t1", KEYS));
+    await s.handle(put("t1", KEYS));
+    expect(s.order).toEqual(["crypto", "events", "crypto"]);
+    expect(s.fed[0]?.toDevice).toHaveLength(1);
+    expect(s.fed[0]?.otkCounts).toEqual(
+      KEYS["org.matrix.msc3202.device_one_time_keys_count"],
+    );
+  });
+
+  test("a transaction with none is not fed", async () => {
+    const s = cryptoSetup();
+    await s.handle(put("t1", { events: [EVENT] }));
+    expect(s.order).toEqual(["events"]);
+  });
+
+  test("a crypto step that throws still delivers the events, and its message is not logged", async () => {
+    const s = cryptoSetup(() => {
+      throw new Error("failed on key material");
+    });
+    const seen: string[] = [];
+    const response = await s.handle(put("t1", KEYS));
+    seen.push(String(response.status));
+    expect(seen).toEqual(["200"]);
+    expect(s.order).toEqual(["events"]);
+    expect(s.lines.join("\n")).not.toContain("key material");
+    expect(s.lines).toContain(
+      'appservice: transaction "t1" crypto handler threw Error',
+    );
+  });
+});
+
+describe("the client's encryption calls", () => {
+  const AS_TOKEN = "as-token-for-tests";
+  function client(answer: (url: URL, init: RequestInit) => Response) {
+    const calls: Array<{ url: URL; init: RequestInit }> = [];
+    const fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = new URL(String(input));
+      calls.push({ url, init: init ?? {} });
+      return answer(url, init ?? {});
+    }) as typeof globalThis.fetch;
+    return {
+      calls,
+      c: createClient({
+        homeserverUrl: "https://matrix.example.test/",
+        serverName: "example.test",
+        asToken: AS_TOKEN,
+        fetch,
+      }),
+      t: createCryptoTransport({
+        homeserverUrl: "https://matrix.example.test/",
+        asToken: AS_TOKEN,
+        fetch,
+      }),
+    };
+  }
+
+  test("login is an appservice login, answering only the device id", async () => {
+    const { c, calls } = client(() =>
+      Response.json({
+        device_id: "DEV1",
+        access_token: "issued-token",
+        user_id: "@superexchange_board:example.test",
+      }),
+    );
+    const answer = await c.login("superexchange_board");
+    expect(answer).toEqual({ deviceId: "DEV1" });
+    expect(JSON.stringify(answer)).not.toContain("issued-token");
+    expect(calls[0]?.url.pathname).toBe("/_matrix/client/v3/login");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      type: "m.login.application_service",
+      identifier: { type: "m.id.user", user: "superexchange_board" },
+    });
+    await expect(c.login("Not Valid")).rejects.toThrow("M_INVALID_USERNAME");
+  });
+
+  test("login that answers no device, or is refused, throws without the token", async () => {
+    const none = client(() => Response.json({}));
+    await expect(none.c.login("superexchange_board")).rejects.toThrow(
+      "login answered 200",
+    );
+    const refused = client(() =>
+      Response.json(
+        { errcode: "M_APPSERVICE_LOGIN_UNSUPPORTED" },
+        { status: 400 },
+      ),
+    );
+    const error = await refused.c
+      .login("superexchange_board")
+      .catch((e: Error) => e);
+    expect(String(error)).toContain("M_APPSERVICE_LOGIN_UNSUPPORTED");
+    expect(String(error)).not.toContain(AS_TOKEN);
+  });
+
+  test("a room's encryption is read from its state; an answer that is not 200 or M_NOT_FOUND throws", async () => {
+    const on = client(() =>
+      Response.json({ algorithm: "m.megolm.v1.aes-sha2" }),
+    );
+    expect(await on.c.roomEncrypted("@u:example.test", "!r:example.test")).toBe(
+      true,
+    );
+    expect(on.calls[0]?.url.pathname).toBe(
+      "/_matrix/client/v3/rooms/!r%3Aexample.test/state/m.room.encryption/",
+    );
+    expect(on.calls[0]?.url.searchParams.get("user_id")).toBe(
+      "@u:example.test",
+    );
+    const off = client(() =>
+      Response.json({ errcode: "M_NOT_FOUND" }, { status: 404 }),
+    );
+    expect(
+      await off.c.roomEncrypted("@u:example.test", "!r:example.test"),
+    ).toBe(false);
+    for (const [status, errcode] of [
+      [403, "M_FORBIDDEN"],
+      [404, "M_UNRECOGNIZED"],
+      [502, "M_UNKNOWN"],
+    ] as const) {
+      const bad = client(() => Response.json({ errcode }, { status }));
+      await expect(
+        bad.c.roomEncrypted("@u:example.test", "!r:example.test"),
+      ).rejects.toThrow(`room_encryption answered ${status} ${errcode}`);
+    }
+  });
+
+  test("the transport asserts the user and the device, and unwraps a signature upload", async () => {
+    const { t, calls } = client(() => Response.json({ failures: {} }));
+    await t.send("@s:example.test", "DEV1", {
+      id: "r1",
+      type: 4,
+      body: JSON.stringify({ signed_keys: { "@s:example.test": { k: 1 } } }),
+    });
+    expect(calls[0]?.url.pathname).toBe(
+      "/_matrix/client/v3/keys/signatures/upload",
+    );
+    expect(calls[0]?.url.searchParams.get("user_id")).toBe("@s:example.test");
+    expect(calls[0]?.url.searchParams.get("device_id")).toBe("DEV1");
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      "@s:example.test": { k: 1 },
+    });
+    await t.send("@s:example.test", "DEV1", {
+      id: "r2",
+      type: 3,
+      body: "{}",
+      eventType: "m.room.encrypted",
+      txnId: "tx/1",
+    });
+    expect(calls[1]?.url.pathname).toBe(
+      "/_matrix/client/v3/sendToDevice/m.room.encrypted/tx%2F1",
+    );
+  });
+
+  test("a refused crypto request names the endpoint and errcode, never the body or the token", async () => {
+    const { t } = client(() =>
+      Response.json(
+        { errcode: "M_BAD_JSON", error: "key material curve25519:AAAA" },
+        { status: 400 },
+      ),
+    );
+    const error = await t
+      .send("@s:example.test", "DEV1", {
+        id: "r",
+        type: 0,
+        body: '{"secret":1}',
+      })
+      .catch((e: Error) => e);
+    expect(String(error)).toContain("keys/upload answered 400 M_BAD_JSON");
+    expect(String(error)).not.toContain("curve25519");
+    expect(String(error)).not.toContain(AS_TOKEN);
+    await expect(
+      t.send("@s:example.test", "DEV1", { id: "r", type: 99, body: "{}" }),
+    ).rejects.toThrow("crypto request 99");
   });
 });

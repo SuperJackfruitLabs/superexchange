@@ -14,6 +14,7 @@ import {
   createBoardChat,
   createBoardRooms,
   createGateAnswers,
+  createRoomSender,
   gateOffer,
   resolveGateAtSuperpipeline,
 } from "../src/board-chat/index.ts";
@@ -231,6 +232,7 @@ function setup() {
     store: t.store,
     client,
     serverName: SERVER,
+    encryptNewRooms: false,
     log,
   });
   const accounts = createAccounts({
@@ -254,9 +256,14 @@ function setup() {
   });
   const chat = createBoardChat({
     store: t.store,
-    client,
+    sender: createRoomSender({
+      store: t.store,
+      client,
+      crypto: null,
+      plaintextRooms: true,
+    }),
     rooms,
-    plaintextRooms: true,
+    crypto: null,
     answers,
     log,
   });
@@ -273,11 +280,17 @@ function setup() {
     orgId: "org_1",
     invitees: [ANA],
   });
-  store.recordBoardRoom("brd_7c1f", ROOM, "superexchange_board_brd_7c1f");
+  store.recordBoardRoom(
+    "brd_7c1f",
+    ROOM,
+    "superexchange_board_brd_7c1f",
+    false,
+  );
   store.recordBoardRoom(
     "brd_other",
     OTHER_ROOM,
     "superexchange_board_brd_other",
+    false,
   );
 
   /** Record a gate as posted, with the offer given or the one its gate.v2 carries. */

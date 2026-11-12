@@ -2,8 +2,9 @@
  * The client-server API, spoken as this appservice's registration: every request carries the
  * `as_token`, and may assert one of the namespace's users with `?user_id=` (the spec's identity
  * assertion). What the board rooms need: `whoami`, registering a localpart with
- * `m.login.application_service` and naming it, creating a room, resolving an alias, inviting,
- * reading who has joined, and sending an event under a caller-chosen transaction id.
+ * `m.login.application_service` and naming it, logging it in for an encryption device, creating
+ * a room, reading whether a room is encrypted, resolving an alias, inviting, reading who has
+ * joined, and sending an event under a caller-chosen transaction id.
  *
  * `fetch` is injected so tests run without a homeserver. An error names the endpoint, the status
  * and the Matrix `errcode`, never the token and never the body the homeserver sent.
@@ -46,6 +47,17 @@ export interface AppserviceClient {
   register(localpart: string): Promise<{ userId: string; created: boolean }>;
   /** Set a user's display name, as that user. */
   setDisplayName(userId: string, displayName: string): Promise<void>;
+  /**
+   * Log a namespace user in with `m.login.application_service`, for the device the homeserver
+   * issues. Only the device id is answered: the access token that comes with it is dropped,
+   * because every request is made as the appservice (`?user_id=&device_id=`).
+   */
+  login(localpart: string): Promise<{ deviceId: string }>;
+  /**
+   * Is the room end-to-end encrypted? Read from its `m.room.encryption` state, as `asUser`.
+   * Throws when the homeserver cannot say: an unknown answer is never taken as "no".
+   */
+  roomEncrypted(asUser: string, roomId: string): Promise<boolean>;
   /**
    * Create a private room as `asUser`, under the alias localpart `aliasLocalpart`. An alias already
    * taken throws with `M_ROOM_IN_USE`. `encrypted` puts `m.room.encryption` (Megolm) in the
@@ -204,6 +216,36 @@ export function createClient(deps: ClientDeps): AppserviceClient {
         `/_matrix/client/v3/profile/${encodeURIComponent(userId)}/displayname`,
         { method: "PUT", asUser: userId, body: { displayname: displayName } },
       );
+    },
+
+    async login(localpart) {
+      const endpoint = "login";
+      if (!LOCALPART.test(localpart)) {
+        throw new MatrixClientError(endpoint, 0, "M_INVALID_USERNAME");
+      }
+      const json = await ok(endpoint, "/_matrix/client/v3/login", {
+        method: "POST",
+        body: {
+          type: "m.login.application_service",
+          identifier: { type: "m.id.user", user: localpart },
+        },
+      });
+      const deviceId = json.device_id;
+      if (typeof deviceId !== "string" || deviceId === "")
+        throw new MatrixClientError(endpoint, 200, null);
+      return { deviceId };
+    },
+
+    async roomEncrypted(asUser, roomId) {
+      const endpoint = "room_encryption";
+      const { status, json } = await call(
+        endpoint,
+        `${room(roomId)}/state/m.room.encryption/`,
+        { method: "GET", asUser },
+      );
+      if (status === 200) return true;
+      if (status === 404 && errcodeOf(json) === "M_NOT_FOUND") return false;
+      throw new MatrixClientError(endpoint, status, errcodeOf(json));
     },
 
     async createRoom(asUser, options) {

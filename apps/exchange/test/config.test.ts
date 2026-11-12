@@ -17,6 +17,7 @@ const FULL = {
   ORG_PLANE_URL: "https://accounts.example",
   ORG_PLANE_SERVICE_CREDENTIAL: `svc_${"0a".repeat(10)}:plane-secret-for-tests`,
   SUPERPIPELINE_URL: "https://pipeline.example",
+  SUPEREXCHANGE_CRYPTO_PASSPHRASE: "crypto-passphrase-for-tests-0123456789",
 };
 
 function problems(env: Record<string, string | undefined>): string[] {
@@ -41,6 +42,7 @@ describe("loadConfig", () => {
       dataDir: "/data",
       operatorTokenSha256: "ab".repeat(32),
       plaintextRooms: false,
+      cryptoPassphrase: "crypto-passphrase-for-tests-0123456789",
       orgPlaneUrl: "https://accounts.example",
       orgPlaneCredential: {
         id: `svc_${"0a".repeat(10)}`,
@@ -112,7 +114,10 @@ describe("loadConfig", () => {
   });
 
   test("names every missing setting at once", () => {
-    expect(problems({})).toEqual(REQUIRED.map((name) => `${name} is not set`));
+    expect(problems({})).toEqual([
+      ...REQUIRED.map((name) => `${name} is not set`),
+      "SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set, and board rooms are encrypted while SUPEREXCHANGE_PLAINTEXT_ROOMS is off",
+    ]);
   });
 
   test("a blank setting is a missing one", () => {
@@ -189,6 +194,49 @@ describe("loadConfig", () => {
     ).toBe(false);
   });
 
+  test("the crypto passphrase is required while plaintext rooms are off, and is at least 32 characters", () => {
+    const { SUPEREXCHANGE_CRYPTO_PASSPHRASE: _, ...none } = FULL;
+    expect(problems(none)).toEqual([
+      "SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set, and board rooms are encrypted while SUPEREXCHANGE_PLAINTEXT_ROOMS is off",
+    ]);
+    expect(
+      problems({ ...FULL, SUPEREXCHANGE_CRYPTO_PASSPHRASE: "   " }),
+    ).toEqual([
+      "SUPEREXCHANGE_CRYPTO_PASSPHRASE is not set, and board rooms are encrypted while SUPEREXCHANGE_PLAINTEXT_ROOMS is off",
+    ]);
+    expect(
+      problems({ ...FULL, SUPEREXCHANGE_CRYPTO_PASSPHRASE: "x".repeat(31) }),
+    ).toEqual([
+      "SUPEREXCHANGE_CRYPTO_PASSPHRASE is shorter than 32 characters",
+    ]);
+    // Used exactly as given: not trimmed.
+    expect(
+      loadConfig({
+        ...FULL,
+        SUPEREXCHANGE_CRYPTO_PASSPHRASE: ` ${"y".repeat(32)} `,
+      }).cryptoPassphrase,
+    ).toBe(` ${"y".repeat(32)} `);
+    // Plaintext rooms on (staging), it may be left unset: nothing is encrypted then.
+    const staging = {
+      ...none,
+      MATRIX_SERVER_NAME: "staging-matrix.example",
+      SUPEREXCHANGE_PLAINTEXT_ROOMS: "on",
+    };
+    expect(loadConfig(staging).cryptoPassphrase).toBeNull();
+    // ... and when set, it is still checked, and used.
+    expect(
+      problems({ ...staging, SUPEREXCHANGE_CRYPTO_PASSPHRASE: "short" }),
+    ).toEqual([
+      "SUPEREXCHANGE_CRYPTO_PASSPHRASE is shorter than 32 characters",
+    ]);
+    expect(
+      loadConfig({
+        ...staging,
+        SUPEREXCHANGE_CRYPTO_PASSPHRASE: FULL.SUPEREXCHANGE_CRYPTO_PASSPHRASE,
+      }).cryptoPassphrase,
+    ).toBe(FULL.SUPEREXCHANGE_CRYPTO_PASSPHRASE);
+  });
+
   test("an error never carries a setting's value", () => {
     const env = {
       ...FULL,
@@ -201,6 +249,7 @@ describe("loadConfig", () => {
       ORG_PLANE_URL: "not-a-plane-url",
       ORG_PLANE_SERVICE_CREDENTIAL: "svc_short:plane-secret-for-tests",
       SUPERPIPELINE_URL: "not-a-pipeline-url",
+      SUPEREXCHANGE_CRYPTO_PASSPHRASE: "short-passphrase",
     };
     let message = "";
     try {

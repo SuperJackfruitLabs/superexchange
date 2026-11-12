@@ -3,7 +3,10 @@
  * v1): the routes under `/_matrix/app/v1/` that a homeserver calls with this registration's
  * `hs_token`.
  *
- * - `PUT /transactions/:txnId`: events pushed to this service. Applied once per transaction id,
+ * - `PUT /transactions/:txnId`: events pushed to this service. Its crypto parts (to-device
+ *   events, device-list changes, one-time-key counts; MSC2409/MSC3202) go to `onCrypto` first,
+ *   on every delivery, a repeat included: a retried transaction still carries the current key
+ *   counts, and an event in it may be encrypted with a key that arrived beside it. Applied once per transaction id,
  *   recorded in the store before the events are handled, so a retry after a crash is not applied
  *   twice. Always `{}` once authorised: the homeserver reads anything else as "not delivered" and
  *   retries the whole transaction, so one bad event must not block every one after it.
@@ -17,6 +20,11 @@
  */
 import { secretMatches } from "../config.ts";
 import type { Store } from "../store/index.ts";
+import {
+  cryptoTransactionOf,
+  hasCryptoChanges,
+  type CryptoTransaction,
+} from "./crypto.ts";
 
 /** Where these routes live. */
 export const APPSERVICE_PREFIX = "/_matrix/app/v1/";
@@ -42,6 +50,8 @@ export interface AppserviceDeps {
   hsToken: string;
   store: Pick<Store, "claimTransaction">;
   onEvents: EventsHandler;
+  /** A transaction's crypto parts, when it carries any; absent, they are not read. */
+  onCrypto?: (tx: CryptoTransaction) => void | Promise<void>;
   log?: (line: string) => void;
 }
 
@@ -113,6 +123,20 @@ export function createAppserviceHandler(deps: AppserviceDeps) {
       log(`appservice: transaction ${JSON.stringify(txnId)} is not JSON`);
       return Response.json({});
     }
+    // Before the replay guard and before the events (see above). A throw is logged by name and
+    // never fails the transaction: a broken crypto step must not hold plaintext traffic back.
+    if (deps.onCrypto) {
+      const tx = cryptoTransactionOf(body);
+      if (hasCryptoChanges(tx)) {
+        try {
+          await deps.onCrypto(tx);
+        } catch (error) {
+          log(
+            `appservice: transaction ${JSON.stringify(txnId)} crypto handler threw ${describeError(error)}`,
+          );
+        }
+      }
+    }
     if (!deps.store.claimTransaction(txnId)) {
       log(`appservice: transaction ${JSON.stringify(txnId)} already applied`);
       return Response.json({});
@@ -122,13 +146,25 @@ export function createAppserviceHandler(deps: AppserviceDeps) {
       await deps.onEvents(txnId, events);
     } catch (error) {
       // Only the error's name: a message may quote the event it failed on.
-      const name = error instanceof Error ? error.name : "unknown";
       log(
-        `appservice: transaction ${JSON.stringify(txnId)} handler threw ${name}`,
+        `appservice: transaction ${JSON.stringify(txnId)} handler threw ${describeError(error)}`,
       );
     }
     return Response.json({});
   }
+}
+
+/**
+ * An error as a log may carry it: a homeserver client error's message (endpoint, status and
+ * errcode only) or a CryptoError's (written here, carries no value), else only the name.
+ */
+function describeError(error: unknown): string {
+  if (
+    error instanceof Error &&
+    (error.name === "MatrixClientError" || error.name === "CryptoError")
+  )
+    return `${error.name}: ${error.message}`;
+  return error instanceof Error ? error.name : "unknown";
 }
 
 /** The transaction's events that have a type; anything else is not an event. */

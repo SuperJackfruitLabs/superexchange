@@ -11,6 +11,11 @@
  * `boardRoomHasJoinedHuman`, an operator rule): a card sent before anybody can read it is a card
  * nobody answers. Memberships are kept from the homeserver's transactions; when none is on
  * record, the room's joined members are asked once.
+ *
+ * A new room is made end-to-end encrypted (`m.room.encryption`, Megolm, in its initial state)
+ * unless `SUPEREXCHANGE_PLAINTEXT_ROOMS` is on, and whether it is encrypted is recorded with it.
+ * A room found by its alias instead is read for its encryption state. A room is never converted:
+ * one made in plaintext stays plaintext (see `room-sender.ts` for what is posted into it).
  */
 import {
   BOARD_SPEAKER_DISPLAY_NAME,
@@ -51,8 +56,11 @@ export interface BoardRoomsDeps {
     | "resolveAlias"
     | "invite"
     | "joinedMembers"
+    | "roomEncrypted"
   >;
   serverName: string;
+  /** Make new rooms encrypted: true unless `SUPEREXCHANGE_PLAINTEXT_ROOMS` is on. */
+  encryptNewRooms: boolean;
   log: (line: string) => void;
 }
 
@@ -129,6 +137,7 @@ export function createBoardRooms(deps: BoardRoomsDeps): BoardRooms {
       const [first] = board.invitees;
       let roomId: string;
       let created = false;
+      let encrypted = deps.encryptNewRooms;
       try {
         roomId = await client.createRoom(speaker, {
           aliasLocalpart: alias,
@@ -136,9 +145,7 @@ export function createBoardRooms(deps: BoardRoomsDeps): BoardRooms {
           topic: `Approvals for ${name}. Answer here and the board hears it.`,
           invite: first ? [first] : [],
           powerLevels: { [speaker]: SPEAKER_POWER },
-          // Reached only while SUPEREXCHANGE_PLAINTEXT_ROOMS is on: this service cannot encrypt
-          // yet, and a room it cannot post into is no use. Encryption replaces this switch.
-          encrypted: false,
+          encrypted,
         });
         created = true;
       } catch (error) {
@@ -148,15 +155,23 @@ export function createBoardRooms(deps: BoardRoomsDeps): BoardRooms {
         const found = await client.resolveAlias(`#${alias}:${deps.serverName}`);
         if (found === null) throw error;
         roomId = found;
+        // Made by an earlier call, perhaps under the other setting: what the room says is what
+        // is recorded.
+        encrypted = await client.roomEncrypted(speaker, roomId);
       }
 
-      const recorded = store.recordBoardRoom(board.boardId, roomId, alias);
+      const recorded = store.recordBoardRoom(
+        board.boardId,
+        roomId,
+        alias,
+        encrypted,
+      );
       store.recordMembership(recorded.roomId, speaker, "join");
       if (created && first)
         store.recordMembership(recorded.roomId, first, "invite");
       await inviteMissing(board, recorded.roomId);
       log(
-        `board-chat: ${board.boardId} room ${created ? "made" : "found by its alias"}`,
+        `board-chat: ${board.boardId} room ${created ? "made" : "found by its alias"}${recorded.encrypted ? ", encrypted" : ", in plaintext"}`,
       );
       return recorded;
     },
@@ -182,10 +197,16 @@ function isRoomInUse(error: unknown): boolean {
 }
 
 /**
- * An error as a log may carry it: a client error's message (endpoint, status and errcode only),
- * or else only the error's name, since a message may quote what it failed on.
+ * An error as a log may carry it: a client error's message (endpoint, status and errcode only), a
+ * refusal's or a crypto error's (fixed words), or else only the error's name, since a message may quote what it failed on.
  */
 export function describe(error: unknown): string {
   if (error instanceof MatrixClientError) return error.message;
+  // Written here, from fixed words: neither carries a value.
+  if (
+    error instanceof Error &&
+    (error.name === "RoomRefused" || error.name === "CryptoError")
+  )
+    return `${error.name}: ${error.message}`;
   return error instanceof Error ? error.name : "unknown";
 }
