@@ -5,6 +5,10 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+- No change in behaviour. Lint is type-aware (oxlint with oxlint-tsgolint) and held by a
+  per-rule ratchet; the architecture test also refuses runtime import cycles and files over
+  1,000 lines; the store is split into a migrations list, a model and one module per table
+  group, behind the same `Store` interface. `docs/code-quality.md` describes the checks.
 - Releases run on the suite's shared release workflow: the tag gate reads forge CI's result for
   the tag's commit, and every tag gets release notes on GitHub.
 
