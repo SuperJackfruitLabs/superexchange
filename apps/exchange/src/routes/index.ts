@@ -39,6 +39,8 @@ export interface HandlerDeps {
   onFollowupAccepted?: (gateId: string) => void;
   /** Told of each waiting card the relay accepted. */
   onAttentionAccepted?: (key: WaitKey) => void;
+  /** Told of each board-room notice the relay accepted. */
+  onNoticeAccepted?: (noticeId: string) => void;
   /** May an approval request on this board be kept? Absent: never. */
   approvalRequestAllowed?: ApprovalRequestAllowed;
   log?: (line: string) => void;
@@ -68,6 +70,9 @@ export function createHandler(deps: HandlerDeps) {
       : {}),
     ...(deps.onAttentionAccepted
       ? { onAttentionAccepted: deps.onAttentionAccepted }
+      : {}),
+    ...(deps.onNoticeAccepted
+      ? { onNoticeAccepted: deps.onNoticeAccepted }
       : {}),
     ...(deps.approvalRequestAllowed
       ? { approvalRequestAllowed: deps.approvalRequestAllowed }

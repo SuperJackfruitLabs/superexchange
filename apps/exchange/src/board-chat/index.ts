@@ -1,6 +1,6 @@
 /**
  * Board work in chat: gates, questions, follow-ups and waiting cards projected into board rooms,
- * and the answers carried back to the board. Built on the appservice transport, the store and
+ * the board's notices about them said there, and the answers carried back to the board. Built on the appservice transport, the store and
  * treaty's board-room contract (`@superjackfruitlabs/treaty-matrix-events`).
  *
  * - `boards.ts`: what an opted-in board is, and the checks on its settings.
@@ -34,6 +34,14 @@
  *   carried to SuperPipeline as the person who answered.
  * - `followup-sweep.ts`, `attention-sweep.ts`: asking each board which follow-ups it is still
  *   owed and which cards still wait.
+ * - `notices.ts`: the relay's board-room notices (reminders, escalations, quorum progress, held
+ *   approvals released or pulled back, checks failed or overridden), kept for opted-in boards when
+ *   the card they concern was posted here.
+ * - `notice-post.ts`: posting a notice once, in reply to its card; an escalation's invites and its
+ *   checks.waiting card.
+ * - `escalation-repost.ts`: an escalation's card moved below, and its notice posted again, for the
+ *   admin it invited once they join.
+ * - `pull-back.ts`: gate.pull_back.v2 and check.override.v2, carried to SuperPipeline as the person.
  * - `sweeper.ts`: running a sweep on its interval, backing off while every board fails.
  * - `accounts.ts`: the organization plane: who a sender is, the assertion that carries them, and
  *   this service's own token for reading boards.
@@ -61,6 +69,7 @@ export {
   gateTxnId,
   type BoardChat,
   type BoardChatDeps,
+  type NoticeChatDeps,
   type PostOutcome,
 } from "./gate-card.ts";
 export {
@@ -161,6 +170,44 @@ export {
   type AttentionSweepResult,
 } from "./attention-sweep.ts";
 export {
+  CHECK_FAILED_V1,
+  CHECK_OVERRIDDEN_V1,
+  DECISION_ESCALATED_V1,
+  DECISION_PULLED_BACK_V1,
+  DECISION_RELEASED_V1,
+  DECISION_REMINDED_V1,
+  GATE_APPROVAL_RECORDED_V1,
+  NOTICE_TYPES,
+  decisionCard,
+  intakeNotice,
+  noticeInputOf,
+  noticeTypeOf,
+  type NoticeIntake,
+} from "./notices.ts";
+export {
+  checksWaitingTxnId,
+  createEscalationRecipients,
+  noticeTxnId,
+  readWaitingChecks,
+  type NoticePostOutcome,
+} from "./notice-post.ts";
+export {
+  MAX_REPOST_ATTEMPTS,
+  MOVED_BELOW_TEXT,
+  SETTLED_ABOVE_TEXT,
+  repostTxnId,
+} from "./escalation-repost.ts";
+export {
+  CHECK_OVERRIDE_COMMENT_REQUIRED_TEXT,
+  PULL_BACK_COMMENT_REQUIRED_TEXT,
+  checkOverrideRefusalText,
+  createCheckOverrides,
+  createPullBacks,
+  pullBackRefusalText,
+  type MarkedAnswers,
+  type PersonCallOutcome,
+} from "./pull-back.ts";
+export {
   SWEEP_MAX_BACKOFF,
   startGateSweep,
   sweepGates,
@@ -185,16 +232,21 @@ export {
   answerFollowupAtSuperpipeline,
   answerQuestionAtSuperpipeline,
   createSuperpipelineReads,
+  overrideCheckAtSuperpipeline,
+  pullBackAtSuperpipeline,
   resolveGateAtSuperpipeline,
   type AttentionAction,
   type AttentionAnswerInput,
   type BoardGate,
+  type CheckOverrideInput,
+  type PullBackInput,
   type FollowupAnswerInput,
   type QuestionAnswerInput,
   type ResolveInput,
   type ResolveResult,
   type SuperpipelineReads,
 } from "./superpipeline.ts";
+export { startSweeper } from "./sweeper.ts";
 export {
   BOARD_ROOM_NAMES,
   NAMESPACE_USER_PREFIX,

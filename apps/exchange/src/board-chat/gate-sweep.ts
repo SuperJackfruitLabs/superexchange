@@ -24,7 +24,8 @@
  * twice as long before the next, up to `SWEEP_MAX_BACKOFF` times the interval; a pass that read
  * any board goes back to the interval. Passes never overlap.
  *
- * Reminders and escalations are not swept here: the relay carries only `gate.pending` today.
+ * Reminders and escalations are not swept: they arrive from the relay (`notices.ts`), and an
+ * unposted one is tried again by the notice retry.
  */
 import { isGatePending } from "@superjackfruitlabs/treaty-matrix-events";
 import type { Store } from "../store/index.ts";

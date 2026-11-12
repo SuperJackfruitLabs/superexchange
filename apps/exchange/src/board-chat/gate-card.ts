@@ -63,7 +63,13 @@ import {
   type MatrixEvent,
   type RoomCrypto,
 } from "../appservice/index.ts";
-import type { BoardRoom, GateOffer, Store, WaitKey } from "../store/index.ts";
+import type {
+  BoardRoom,
+  EscalationInvite,
+  GateOffer,
+  Store,
+  WaitKey,
+} from "../store/index.ts";
 import type {
   AttentionAnswerOutcome,
   AttentionAnswers,
@@ -85,6 +91,18 @@ import {
   type FollowupSettleOutcome,
 } from "./followup-card.ts";
 import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
+import {
+  MAX_REPOST_ATTEMPTS,
+  repostForInvite,
+  type RepostDeps,
+  type RepostReads,
+} from "./escalation-repost.ts";
+import {
+  postNotice,
+  type NoticePostDeps,
+  type NoticePostOutcome,
+} from "./notice-post.ts";
+import type { MarkedAnswers, PersonCallOutcome } from "./pull-back.ts";
 import type {
   QuestionAnswerOutcome,
   QuestionAnswers,
@@ -171,46 +189,61 @@ export type PostOutcome =
     }
   | { status: "failed"; step: "room" | "membership" | "send" };
 
+/** What the notices need beyond the room: whom to invite, and what to read. */
+export interface NoticeChatDeps {
+  invite?: NoticePostDeps["invite"];
+  recipients?: NoticePostDeps["recipients"];
+  labelFor?: NoticePostDeps["labelFor"];
+  /** The board's reads: a card's checks, and what it waits on for a re-post. */
+  reads?: Partial<RepostReads>;
+}
+
 export interface BoardChatDeps {
-  store: Pick<
-    Store,
-    | "getBoard"
-    | "gateDelivery"
-    | "unpostedGates"
-    | "boardRoomByRoomId"
-    | "recordMembership"
-    | "claimGateEvent"
-    | "gateEvent"
-    | "recordGateProse"
-    | "recordGatePosted"
-    | "boardRoom"
-    | "parkPendingDecrypt"
-    | "pendingDecrypts"
-    | "claimPendingDecrypt"
-    | "settleGateEvent"
-    | "settleGateDelivery"
-    | "questionDelivery"
-    | "questionEvent"
-    | "claimQuestionEvent"
-    | "recordQuestionPosted"
-    | "unpostedQuestions"
-    | "settleQuestionDelivery"
-    | "settleQuestionEvent"
-    | "followupDelivery"
-    | "followupEvent"
-    | "claimFollowupEvent"
-    | "recordFollowupPosted"
-    | "unpostedFollowups"
-    | "settleFollowupDelivery"
-    | "settleFollowupEvent"
-    | "attentionDelivery"
-    | "attentionEvent"
-    | "claimAttentionEvent"
-    | "recordAttentionPosted"
-    | "unpostedAttention"
-    | "settleAttentionDelivery"
-    | "settleAttentionEvent"
-  >;
+  store: NoticePostDeps["store"] &
+    RepostDeps["store"] &
+    Pick<
+      Store,
+      "unpostedNotices" | "recordInviteJoined" | "invitesOwingReposts"
+    > &
+    Pick<
+      Store,
+      | "getBoard"
+      | "gateDelivery"
+      | "unpostedGates"
+      | "boardRoomByRoomId"
+      | "recordMembership"
+      | "claimGateEvent"
+      | "gateEvent"
+      | "recordGateProse"
+      | "recordGatePosted"
+      | "boardRoom"
+      | "parkPendingDecrypt"
+      | "pendingDecrypts"
+      | "claimPendingDecrypt"
+      | "settleGateEvent"
+      | "settleGateDelivery"
+      | "questionDelivery"
+      | "questionEvent"
+      | "claimQuestionEvent"
+      | "recordQuestionPosted"
+      | "unpostedQuestions"
+      | "settleQuestionDelivery"
+      | "settleQuestionEvent"
+      | "followupDelivery"
+      | "followupEvent"
+      | "claimFollowupEvent"
+      | "recordFollowupPosted"
+      | "unpostedFollowups"
+      | "settleFollowupDelivery"
+      | "settleFollowupEvent"
+      | "attentionDelivery"
+      | "attentionEvent"
+      | "claimAttentionEvent"
+      | "recordAttentionPosted"
+      | "unpostedAttention"
+      | "settleAttentionDelivery"
+      | "settleAttentionEvent"
+    >;
   /** Speaks in board rooms, encrypted where the room is (`room-sender.ts`). */
   sender: RoomSender;
   rooms: BoardRooms;
@@ -224,6 +257,12 @@ export interface BoardChatDeps {
   followups?: FollowupAnswers;
   /** People's answers to the waiting cards posted here (`attention-answer.ts`); absent, none is read. */
   attention?: AttentionAnswers;
+  /** Pull-backs of held approvals (`pull-back.ts`); absent, none is read. */
+  pullBacks?: MarkedAnswers;
+  /** Overrides of checks (`pull-back.ts`); absent, none is read. */
+  overrides?: MarkedAnswers;
+  /** The board-room notices' neighbours; absent, escalations invite nobody and read nothing. */
+  notices?: NoticeChatDeps;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -277,6 +316,18 @@ export interface BoardChat {
   settleAttention(key: WaitKey): Promise<AttentionSettleOutcome>;
   /** Carry one attention.answer.v2, queued. */
   answerAttention(event: MatrixEvent): Promise<AttentionAnswerOutcome | null>;
+  /** Post one recorded notice, queued behind every post and answer before it. */
+  postNotice(noticeId: string): Promise<NoticePostOutcome>;
+  /** A notice the relay accepted: queue its post and return at once. */
+  noticeAccepted(noticeId: string): void;
+  /** Queue every notice not yet posted, and every join still owed its re-posts. */
+  retryNotices(): void;
+  /** Re-post a board's open escalations for an invitee who joined, queued. */
+  repost(invite: EscalationInvite): Promise<number>;
+  /** Carry one gate.pull_back.v2, queued. */
+  answerPullBack(event: MatrixEvent): Promise<PersonCallOutcome | null>;
+  /** Carry one check.override.v2, queued. */
+  answerOverride(event: MatrixEvent): Promise<PersonCallOutcome | null>;
   /** Settles when every queued post has run. */
   idle(): Promise<void>;
 }
@@ -509,6 +560,56 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
   const answerA = (event: MatrixEvent) =>
     carry("a waiting card's", attention, event);
 
+  const pullBacks = deps.pullBacks;
+  const overrides = deps.overrides;
+  const answerP = (event: MatrixEvent) =>
+    carry("a pull-back's", pullBacks, event);
+  const answerO = (event: MatrixEvent) =>
+    carry("a check override's", overrides, event);
+
+  const n = deps.notices ?? {};
+  const noticeDeps: NoticePostDeps = {
+    store,
+    sender,
+    speaker: rooms.speaker,
+    refuse: refusalFor,
+    ...(n.invite ? { invite: n.invite } : {}),
+    ...(n.recipients ? { recipients: n.recipients } : {}),
+    ...(n.labelFor ? { labelFor: n.labelFor } : {}),
+    ...(n.reads?.cardChecks
+      ? {
+          checks: {
+            cardChecks: (b: string, c: string) =>
+              (n.reads as RepostReads).cardChecks(b, c),
+          },
+        }
+      : {}),
+    log,
+  };
+  const repostDeps: RepostDeps = {
+    store,
+    sender,
+    speaker: rooms.speaker,
+    ...(n.reads ? { reads: n.reads } : {}),
+    log,
+  };
+  const postN = (noticeId: string) =>
+    enqueue(() => postNotice(noticeDeps, noticeId));
+  const repost = (invite: EscalationInvite) =>
+    enqueue(() => repostForInvite(repostDeps, invite)).catch(
+      (error: unknown) => {
+        log(
+          `board-chat: escalations could not be posted again (${describe(error)})`,
+        );
+        return 0;
+      },
+    );
+  const retryNotices = () => {
+    for (const notice of store.unpostedNotices()) void postN(notice.noticeId);
+    for (const invite of store.invitesOwingReposts(MAX_REPOST_ATTEMPTS))
+      void repost(invite);
+  };
+
   const postAll = (boardId?: string) => {
     for (const gate of store.unpostedGates(boardId)) void post(gate.gateId);
     for (const q of store.unpostedQuestions(boardId))
@@ -516,6 +617,8 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     for (const f of store.unpostedFollowups(boardId)) void postF(f.gateId);
     for (const a of store.unpostedAttention(boardId))
       void postA({ boardId: a.boardId, cardId: a.cardId, waitId: a.waitId });
+    for (const notice of store.unpostedNotices(boardId))
+      void postN(notice.noticeId);
   };
 
   /**
@@ -539,6 +642,16 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     }
     if (attention?.isAnswer(event)) {
       void answerA(event);
+      return true;
+    }
+    // Matched by marker alone, before a typed reply: a malformed pull-back or override is refused
+    // there, never read as a number for the question open in the room.
+    if (pullBacks?.isAnswer(event)) {
+      void answerP(event);
+      return true;
+    }
+    if (overrides?.isAnswer(event)) {
+      void answerO(event);
       return true;
     }
     if (questions?.isTypedReply(event)) {
@@ -665,10 +778,17 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     attentionAccepted: (key) => void postA(key),
     settleAttention: (key) => enqueue(() => settleAttention(settleDeps, key)),
     answerAttention: answerA,
+    postNotice: postN,
+    noticeAccepted: (noticeId) => void postN(noticeId),
+    retryNotices,
+    repost,
+    answerPullBack: answerP,
+    answerOverride: answerO,
     retryPending,
     resume: () => {
       answers?.resume();
       postAll();
+      retryNotices();
       void retryPending().catch((error: unknown) =>
         log(
           `board-chat: waiting encrypted events could not be retried (${describe(error)})`,
@@ -697,6 +817,9 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
         store.recordMembership(member.roomId, member.userId, member.membership);
         if (member.membership === "join" && rooms.isPerson(member.userId)) {
           woken.add(room.boardId);
+          // An admin an escalation invited: the open escalations they could not read, again.
+          const invite = store.recordInviteJoined(room.boardId, member.userId);
+          if (invite !== null) void repost(invite);
         }
       }
       for (const boardId of woken) postAll(boardId);

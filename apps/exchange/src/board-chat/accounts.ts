@@ -12,6 +12,9 @@
  * - `POST /api/token/assertion` with `{ identity: { system: "matrix", externalId }, audience }`:
  *   the plane resolves the person itself, so no caller can name whom to assert. The token's `sub`
  *   must be the principal resolved from the same sender, or the answer is refused.
+ * - `GET /api/principals?kind=human` and `GET /api/principals/:id/identities?system=matrix`: the
+ *   workspace's owners and admins with a linked Matrix id, whom an escalation invites (the hub's
+ *   `workspace-admins.ts`).
  * - `POST /api/token/service` with `{ audience }`: this service's own token for SuperPipeline,
  *   which the gate sweep reads boards with (`gates:read`). Held until shortly before it expires
  *   (`createServiceTokens`), never logged.
@@ -76,6 +79,14 @@ export interface Accounts {
    * plane cannot say.
    */
   principalLabel(principalId: string): Promise<string | null>;
+  /**
+   * Whom an escalation invites: the Matrix ids of this service's workspace's owners and admins
+   * (`GET /api/principals?kind=human`, each with its `role`), not suspended, who have linked one
+   * (`GET /api/principals/:id/identities?system=matrix`). A Matrix id is never guessed: an admin
+   * who linked none is not invited. Throws `AccountsError` when the plane cannot say: "could not
+   * ask" is not "nobody to tell".
+   */
+  workspaceAdmins(): Promise<string[]>;
   /** This service's own token for `audience`. Throws `AccountsError` when it cannot be had. */
   serviceToken(
     audience: string,
@@ -84,6 +95,9 @@ export interface Accounts {
 
 /** A principal id as the plane writes one; anything else names nobody and is not asked about. */
 const PRINCIPAL_ID = /^prn_[A-Za-z0-9_-]{1,64}$/;
+
+/** A Matrix user id, as an invite takes one; anything else is never invited. */
+const MATRIX_ID = /^@[^\s:]{1,255}:[^\s]{1,255}$/;
 
 export interface AccountsDeps {
   url: string;
@@ -192,6 +206,40 @@ export function createAccounts(deps: AccountsDeps): Accounts {
     async principalLabel(principalId) {
       if (!PRINCIPAL_ID.test(principalId)) return null;
       return (await principal(principalId))?.label ?? null;
+    },
+
+    async workspaceAdmins() {
+      const listed = ok(await call("GET", "/api/principals?kind=human"));
+      if (!Array.isArray(listed)) {
+        throw new AccountsError(200, "malformed_response");
+      }
+      const mxids: string[] = [];
+      for (const p of listed) {
+        const id = field(p, "id");
+        const role = field(p, "role");
+        if (typeof id !== "string" || !PRINCIPAL_ID.test(id)) continue;
+        if (field(p, "kind") !== "human" || field(p, "suspended") !== false)
+          continue;
+        if (role !== "owner" && role !== "admin") continue;
+        const identities = ok(
+          await call(
+            "GET",
+            `/api/principals/${enc(id)}/identities?system=matrix`,
+          ),
+          true,
+        );
+        if (!Array.isArray(identities)) continue;
+        for (const identity of identities) {
+          const externalId = field(identity, "externalId");
+          if (
+            field(identity, "system") === "matrix" &&
+            typeof externalId === "string" &&
+            MATRIX_ID.test(externalId)
+          )
+            mxids.push(externalId);
+        }
+      }
+      return [...new Set(mxids)];
     },
 
     async serviceToken(audience) {
