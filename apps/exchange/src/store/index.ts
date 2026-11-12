@@ -6,8 +6,9 @@
  * with what they offered, whether a person's answer to each has acted and its receipt been
  * posted, which gates the board says were decided elsewhere and settled here, the questions the
  * relay delivered and the ones posted (with what they offered, and whether their receipt has been
- * claimed), the delivery follow-ups and waiting cards likewise, the speaker's encryption device,
- * and encrypted events still waiting for their key.
+ * claimed), the delivery follow-ups and waiting cards likewise, the board-room notices (reminders,
+ * escalations and whom they invited, quorum progress, held approvals, checks) and the checks.waiting
+ * cards, the speaker's encryption device, and encrypted events still waiting for their key.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -179,6 +180,58 @@ export const MIGRATIONS: readonly string[] = [
      settled_at TEXT,
      PRIMARY KEY (board_id, card_id, wait_id)
    );`,
+  // Board-room notices: a decision's reminder or escalation, a quorum gate's approval, a held
+  // approval released or pulled back, a check failed or overridden. Each is recorded once under
+  // its key (what makes it the same notice when it is delivered again), claimed with the room and
+  // the card it replies to before anything is sent, and posted once. One that has nothing true to
+  // say (its card never posted here, or already settled) is dropped, and never posted after.
+  // An escalation's invites are recorded once per board and person, so somebody who leaves is not
+  // invited back, and their join owes the open escalations one re-post. A check set's escalation
+  // posts one checks.waiting card (keyed by its arrival), which an override must reference.
+  `CREATE TABLE notices (
+     notice_id TEXT PRIMARY KEY,
+     notice TEXT NOT NULL,
+     board_id TEXT NOT NULL,
+     card_id TEXT NOT NULL,
+     decision_kind TEXT,
+     decision_id TEXT,
+     body TEXT NOT NULL,
+     received_at TEXT NOT NULL,
+     room_id TEXT,
+     reply_to TEXT,
+     claimed_at TEXT,
+     prose_event_id TEXT,
+     posted_at TEXT,
+     dropped_at TEXT,
+     reposted_at TEXT,
+     card_moved_at TEXT
+   );
+   CREATE INDEX notices_board ON notices (board_id);
+   CREATE TABLE escalation_invites (
+     board_id TEXT NOT NULL,
+     user_id TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     invited_at TEXT NOT NULL,
+     joined_at TEXT,
+     reposted_at TEXT,
+     repost_attempts INTEGER NOT NULL DEFAULT 0,
+     PRIMARY KEY (board_id, user_id)
+   );
+   CREATE TABLE checks_waiting (
+     board_id TEXT NOT NULL,
+     arrival_id TEXT NOT NULL,
+     card_id TEXT NOT NULL,
+     card_title TEXT NOT NULL,
+     stage_key TEXT NOT NULL,
+     stage_name TEXT,
+     room_id TEXT NOT NULL,
+     event_id TEXT,
+     claimed_at TEXT NOT NULL,
+     posted_at TEXT,
+     closed_at TEXT,
+     PRIMARY KEY (board_id, arrival_id)
+   );
+   CREATE INDEX checks_waiting_event ON checks_waiting (event_id);`,
 ];
 
 export class StoreError extends Error {
@@ -430,6 +483,75 @@ export interface UnpostedGate {
   body: unknown;
 }
 
+/** What a board-room notice says. */
+export type NoticeKind =
+  | "reminded"
+  | "escalated"
+  | "approval_recorded"
+  | "released"
+  | "pulled_back"
+  | "check_failed"
+  | "check_overridden";
+
+/** A notice to record: its key is what makes a redelivery the same notice. */
+export interface NoticeInput {
+  noticeId: string;
+  notice: NoticeKind;
+  boardId: string;
+  cardId: string;
+  /** A reminder's or an escalation's decision; null for the other notices. */
+  decisionKind: string | null;
+  decisionId: string | null;
+  body: unknown;
+}
+
+/** A recorded notice and how far it got. */
+export interface Notice extends NoticeInput {
+  receivedAt: string;
+  /** The room it is said in, from its claim; null while unclaimed. */
+  roomId: string | null;
+  /** The card it replies to, from its claim; null when it stands alone. */
+  replyTo: string | null;
+  claimedAt: string | null;
+  /** The prose line's event, once it landed. */
+  proseEventId: string | null;
+  postedAt: string | null;
+  /** Set when it had nothing true to say: never posted after. */
+  droppedAt: string | null;
+  /** An escalation: when it was last posted again for somebody who joined. */
+  repostedAt: string | null;
+  /** An escalation: when its card was last moved below for somebody who joined. */
+  cardMovedAt: string | null;
+}
+
+/** Somebody an escalation invited into a board's room. */
+export interface EscalationInvite {
+  boardId: string;
+  userId: string;
+  roomId: string;
+  invitedAt: string;
+  joinedAt: string | null;
+  repostedAt: string | null;
+  repostAttempts: number;
+}
+
+/** The checks.waiting card an escalation of overdue checks posted, keyed by the check set's arrival. */
+export interface ChecksWaiting {
+  boardId: string;
+  arrivalId: string;
+  cardId: string;
+  cardTitle: string;
+  stageKey: string;
+  stageName: string | null;
+  roomId: string;
+  /** The card's current event: what an override must reference. Null until it is posted. */
+  eventId: string | null;
+  claimedAt: string;
+  postedAt: string | null;
+  /** Set when its checks are over (the card went back): no notice replies to it after. */
+  closedAt: string | null;
+}
+
 export interface Store {
   /** The schema version the database is at. */
   schemaVersion(): number;
@@ -618,6 +740,108 @@ export interface Store {
   settleAttentionEvent(key: WaitKey): boolean;
   /** A board's posted waiting cards whose receipt is not claimed, oldest first. */
   postedAttentionAwaitingOutcome(boardId: string): AttentionEvent[];
+
+  /**
+   * Point a posted gate at a new copy of its card, only while it still points at the old one and
+   * has no receipt. True when it moved.
+   */
+  moveGateEvent(
+    gateId: string,
+    was: { proseEventId: string | null; cardEventId: string | null },
+    to: { proseEventId: string; cardEventId: string },
+  ): boolean;
+  /**
+   * Record a quorum gate's count as the board gives it, only while the gate has no receipt and
+   * the count does not go down. True when it was recorded.
+   */
+  recordGateQuorum(gateId: string, quorum: { approvals: unknown[] }): boolean;
+  /** Point a posted question at a new copy, as `moveGateEvent`. */
+  moveQuestionEvent(elicitationId: string, was: string, to: string): boolean;
+  /** Point a posted follow-up at a new copy, as `moveGateEvent`. */
+  moveFollowupEvent(gateId: string, was: string, to: string): boolean;
+  /** Point a posted waiting card at a new copy, as `moveGateEvent`. */
+  moveAttentionEvent(key: WaitKey, was: string, to: string): boolean;
+
+  /** Record a notice. True when new, false when this key was already recorded. */
+  recordNotice(input: NoticeInput): boolean;
+  notice(noticeId: string): Notice | null;
+  /** Notices neither posted nor dropped, oldest first; only `boardId`'s when it is given. */
+  unpostedNotices(boardId?: string): Notice[];
+  /** Claim a notice's post: the room, and the card it replies to. True once. */
+  claimNotice(
+    noticeId: string,
+    roomId: string,
+    replyTo: string | null,
+  ): boolean;
+  /** Record a claimed notice's prose line, once it landed. */
+  recordNoticeProse(noticeId: string, eventId: string): void;
+  /** Record that a claimed notice is posted. */
+  recordNoticePosted(noticeId: string): void;
+  /** Drop an unclaimed notice: it is never posted. True when this call dropped it. */
+  dropNotice(noticeId: string): boolean;
+  /** A board's posted escalations, oldest first. */
+  postedEscalations(boardId: string): Notice[];
+  /**
+   * Claim an escalation's re-post for a join at `joinedAt`: true when it was not re-posted since.
+   * A failed re-post gives it back with `releaseNoticeRepost`.
+   */
+  claimNoticeRepost(noticeId: string, joinedAt: string): boolean;
+  /** Give a re-post claim back: the re-post failed, and the next pass tries it again. */
+  releaseNoticeRepost(noticeId: string, previous: string | null): void;
+  /** Record that an escalation's card was moved below. */
+  recordNoticeCardMoved(noticeId: string): void;
+  /** The newest non-empty card title a reminder or escalation of this card recorded, or null. */
+  knownCardTitle(boardId: string, cardId: string): string | null;
+
+  /** Record that an escalation invites somebody to a board. True when this call recorded it. */
+  claimEscalationInvite(
+    boardId: string,
+    userId: string,
+    roomId: string,
+  ): boolean;
+  /** Forget an invite the homeserver refused, so the next escalation tries again. */
+  forgetEscalationInvite(boardId: string, userId: string): void;
+  /** Record an invitee's first join. The invite when this call recorded it; null otherwise. */
+  recordInviteJoined(boardId: string, userId: string): EscalationInvite | null;
+  /** Invites whose join still owes re-posts, under `maxAttempts` passes. */
+  invitesOwingReposts(maxAttempts: number): EscalationInvite[];
+  /** Count one re-post pass for an invite. */
+  countRepostAttempt(boardId: string, userId: string): void;
+  /** Record that an invite's join is fully re-posted. */
+  recordInviteReposted(boardId: string, userId: string): void;
+
+  /** Claim a check set's checks.waiting card. True once per board and arrival. */
+  claimChecksWaiting(
+    input: Omit<
+      ChecksWaiting,
+      "eventId" | "claimedAt" | "postedAt" | "closedAt"
+    >,
+  ): boolean;
+  checksWaiting(boardId: string, arrivalId: string): ChecksWaiting | null;
+  /** Record a checks.waiting card's event, and that it is posted. */
+  recordChecksWaitingPosted(
+    boardId: string,
+    arrivalId: string,
+    eventId: string,
+  ): void;
+  /** The posted checks.waiting card whose current event is this one, or null. */
+  checksWaitingByEvent(eventId: string): ChecksWaiting | null;
+  /** The newest posted, open checks.waiting card for this card and stage in this room, or null. */
+  openChecksWaiting(
+    boardId: string,
+    cardId: string,
+    stageKey: string,
+    roomId: string,
+  ): ChecksWaiting | null;
+  /** Close a checks.waiting card: its checks are over. */
+  closeChecksWaiting(boardId: string, arrivalId: string): void;
+  /** Point an open checks.waiting card at a new copy, only while it points at the old one. */
+  moveChecksWaiting(
+    boardId: string,
+    arrivalId: string,
+    was: string,
+    to: string,
+  ): boolean;
 
   /** The encryption device recorded for a user, or null. */
   cryptoDevice(userId: string): string | null;
@@ -1448,9 +1672,426 @@ export function openStore(
       );
     },
 
+    moveGateEvent(gateId, was, to) {
+      return (
+        db
+          .query(
+            `UPDATE gate_events SET prose_event_id = ?, card_event_id = ?
+             WHERE gate_id = ? AND prose_event_id IS ? AND card_event_id IS ?
+               AND posted_at IS NOT NULL AND outcome_posted_at IS NULL`,
+          )
+          .run(
+            to.proseEventId,
+            to.cardEventId,
+            gateId,
+            was.proseEventId,
+            was.cardEventId,
+          ).changes === 1
+      );
+    },
+
+    recordGateQuorum(gateId, quorum) {
+      return db.transaction(() => {
+        const row = db
+          .query<
+            { quorum: string | null },
+            [string]
+          >("SELECT quorum FROM gate_events WHERE gate_id = ? AND outcome_posted_at IS NULL")
+          .get(gateId);
+        if (!row) return false;
+        const recorded =
+          row.quorum === null ? null : (JSON.parse(row.quorum) as unknown);
+        const had =
+          typeof recorded === "object" &&
+          recorded !== null &&
+          Array.isArray((recorded as { approvals?: unknown }).approvals)
+            ? (recorded as { approvals: unknown[] }).approvals.length
+            : -1;
+        // Never walked back by a late redelivery of an earlier approval, which carries fewer.
+        if (had > quorum.approvals.length) return false;
+        db.query("UPDATE gate_events SET quorum = ? WHERE gate_id = ?").run(
+          JSON.stringify(quorum),
+          gateId,
+        );
+        return true;
+      })();
+    },
+
+    moveQuestionEvent(elicitationId, was, to) {
+      return (
+        db
+          .query(
+            "UPDATE question_events SET event_id = ? WHERE elicitation_id = ? AND event_id = ? AND outcome_posted_at IS NULL",
+          )
+          .run(to, elicitationId, was).changes === 1
+      );
+    },
+
+    moveFollowupEvent(gateId, was, to) {
+      return (
+        db
+          .query(
+            "UPDATE followup_events SET event_id = ? WHERE gate_id = ? AND event_id = ? AND outcome_posted_at IS NULL",
+          )
+          .run(to, gateId, was).changes === 1
+      );
+    },
+
+    moveAttentionEvent(key, was, to) {
+      return (
+        db
+          .query(
+            `UPDATE attention_events SET event_id = ?
+             WHERE board_id = ? AND card_id = ? AND wait_id = ? AND event_id = ? AND outcome_posted_at IS NULL`,
+          )
+          .run(to, key.boardId, key.cardId, key.waitId, was).changes === 1
+      );
+    },
+
+    recordNotice(input) {
+      return (
+        db
+          .query(
+            `INSERT INTO notices (notice_id, notice, board_id, card_id, decision_kind, decision_id, body, received_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (notice_id) DO NOTHING`,
+          )
+          .run(
+            input.noticeId,
+            input.notice,
+            input.boardId,
+            input.cardId,
+            input.decisionKind,
+            input.decisionId,
+            JSON.stringify(input.body),
+            stamp(),
+          ).changes === 1
+      );
+    },
+
+    notice(noticeId) {
+      const row = db
+        .query<NoticeRow, [string]>("SELECT * FROM notices WHERE notice_id = ?")
+        .get(noticeId);
+      return row ? toNotice(row) : null;
+    },
+
+    unpostedNotices(boardId) {
+      return db
+        .query<NoticeRow, [string | null, string | null]>(
+          `SELECT * FROM notices
+           WHERE posted_at IS NULL AND dropped_at IS NULL AND (?1 IS NULL OR board_id = ?2)
+           ORDER BY received_at, notice_id`,
+        )
+        .all(boardId ?? null, boardId ?? null)
+        .map(toNotice);
+    },
+
+    claimNotice(noticeId, roomId, replyTo) {
+      return (
+        db
+          .query(
+            `UPDATE notices SET room_id = ?, reply_to = ?, claimed_at = ?
+             WHERE notice_id = ? AND claimed_at IS NULL AND dropped_at IS NULL`,
+          )
+          .run(roomId, replyTo, stamp(), noticeId).changes === 1
+      );
+    },
+
+    recordNoticeProse(noticeId, eventId) {
+      db.query("UPDATE notices SET prose_event_id = ? WHERE notice_id = ?").run(
+        eventId,
+        noticeId,
+      );
+    },
+
+    recordNoticePosted(noticeId) {
+      db.query(
+        "UPDATE notices SET posted_at = ? WHERE notice_id = ? AND posted_at IS NULL",
+      ).run(stamp(), noticeId);
+    },
+
+    dropNotice(noticeId) {
+      return (
+        db
+          .query(
+            "UPDATE notices SET dropped_at = ? WHERE notice_id = ? AND claimed_at IS NULL AND dropped_at IS NULL",
+          )
+          .run(stamp(), noticeId).changes === 1
+      );
+    },
+
+    postedEscalations(boardId) {
+      return db
+        .query<NoticeRow, [string]>(
+          `SELECT * FROM notices WHERE board_id = ? AND notice = 'escalated' AND posted_at IS NOT NULL
+           ORDER BY posted_at, notice_id`,
+        )
+        .all(boardId)
+        .map(toNotice);
+    },
+
+    claimNoticeRepost(noticeId, joinedAt) {
+      return (
+        db
+          .query(
+            `UPDATE notices SET reposted_at = ?
+             WHERE notice_id = ? AND (reposted_at IS NULL OR reposted_at < ?)`,
+          )
+          .run(stamp(), noticeId, joinedAt).changes === 1
+      );
+    },
+
+    releaseNoticeRepost(noticeId, previous) {
+      db.query("UPDATE notices SET reposted_at = ? WHERE notice_id = ?").run(
+        previous,
+        noticeId,
+      );
+    },
+
+    recordNoticeCardMoved(noticeId) {
+      db.query("UPDATE notices SET card_moved_at = ? WHERE notice_id = ?").run(
+        stamp(),
+        noticeId,
+      );
+    },
+
+    knownCardTitle(boardId, cardId) {
+      const rows = db
+        .query<{ body: string }, [string, string]>(
+          `SELECT body FROM notices WHERE board_id = ? AND card_id = ? AND notice IN ('reminded', 'escalated')
+           ORDER BY received_at DESC, notice_id DESC`,
+        )
+        .all(boardId, cardId);
+      for (const row of rows) {
+        const title = (JSON.parse(row.body) as { cardTitle?: unknown })
+          .cardTitle;
+        if (typeof title === "string" && title.trim() !== "")
+          return title.trim();
+      }
+      return null;
+    },
+
+    claimEscalationInvite(boardId, userId, roomId) {
+      return (
+        db
+          .query(
+            `INSERT INTO escalation_invites (board_id, user_id, room_id, invited_at)
+             VALUES (?, ?, ?, ?) ON CONFLICT (board_id, user_id) DO NOTHING`,
+          )
+          .run(boardId, userId, roomId, stamp()).changes === 1
+      );
+    },
+
+    forgetEscalationInvite(boardId, userId) {
+      db.query(
+        "DELETE FROM escalation_invites WHERE board_id = ? AND user_id = ?",
+      ).run(boardId, userId);
+    },
+
+    recordInviteJoined(boardId, userId) {
+      const at = stamp();
+      const changed = db
+        .query(
+          "UPDATE escalation_invites SET joined_at = ? WHERE board_id = ? AND user_id = ? AND joined_at IS NULL",
+        )
+        .run(at, boardId, userId).changes;
+      if (changed !== 1) return null;
+      const row = db
+        .query<
+          EscalationInviteRow,
+          [string, string]
+        >("SELECT * FROM escalation_invites WHERE board_id = ? AND user_id = ?")
+        .get(boardId, userId);
+      return row ? toEscalationInvite(row) : null;
+    },
+
+    invitesOwingReposts(maxAttempts) {
+      return db
+        .query<EscalationInviteRow, [number]>(
+          `SELECT * FROM escalation_invites
+           WHERE joined_at IS NOT NULL AND reposted_at IS NULL AND repost_attempts < ?
+           ORDER BY joined_at, board_id, user_id`,
+        )
+        .all(maxAttempts)
+        .map(toEscalationInvite);
+    },
+
+    countRepostAttempt(boardId, userId) {
+      db.query(
+        "UPDATE escalation_invites SET repost_attempts = repost_attempts + 1 WHERE board_id = ? AND user_id = ?",
+      ).run(boardId, userId);
+    },
+
+    recordInviteReposted(boardId, userId) {
+      db.query(
+        "UPDATE escalation_invites SET reposted_at = ? WHERE board_id = ? AND user_id = ?",
+      ).run(stamp(), boardId, userId);
+    },
+
+    claimChecksWaiting(input) {
+      return (
+        db
+          .query(
+            `INSERT INTO checks_waiting (board_id, arrival_id, card_id, card_title, stage_key, stage_name, room_id, claimed_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (board_id, arrival_id) DO NOTHING`,
+          )
+          .run(
+            input.boardId,
+            input.arrivalId,
+            input.cardId,
+            input.cardTitle,
+            input.stageKey,
+            input.stageName,
+            input.roomId,
+            stamp(),
+          ).changes === 1
+      );
+    },
+
+    checksWaiting(boardId, arrivalId) {
+      const row = db
+        .query<
+          ChecksWaitingRow,
+          [string, string]
+        >("SELECT * FROM checks_waiting WHERE board_id = ? AND arrival_id = ?")
+        .get(boardId, arrivalId);
+      return row ? toChecksWaiting(row) : null;
+    },
+
+    recordChecksWaitingPosted(boardId, arrivalId, eventId) {
+      db.query(
+        "UPDATE checks_waiting SET event_id = ?, posted_at = ? WHERE board_id = ? AND arrival_id = ?",
+      ).run(eventId, stamp(), boardId, arrivalId);
+    },
+
+    checksWaitingByEvent(eventId) {
+      const row = db
+        .query<
+          ChecksWaitingRow,
+          [string]
+        >("SELECT * FROM checks_waiting WHERE event_id = ? AND posted_at IS NOT NULL")
+        .get(eventId);
+      return row ? toChecksWaiting(row) : null;
+    },
+
+    openChecksWaiting(boardId, cardId, stageKey, roomId) {
+      const row = db
+        .query<ChecksWaitingRow, [string, string, string, string]>(
+          `SELECT * FROM checks_waiting
+           WHERE board_id = ? AND card_id = ? AND stage_key = ? AND room_id = ?
+             AND posted_at IS NOT NULL AND closed_at IS NULL
+           ORDER BY claimed_at DESC, arrival_id DESC LIMIT 1`,
+        )
+        .get(boardId, cardId, stageKey, roomId);
+      return row ? toChecksWaiting(row) : null;
+    },
+
+    closeChecksWaiting(boardId, arrivalId) {
+      db.query(
+        "UPDATE checks_waiting SET closed_at = ? WHERE board_id = ? AND arrival_id = ? AND closed_at IS NULL",
+      ).run(stamp(), boardId, arrivalId);
+    },
+
+    moveChecksWaiting(boardId, arrivalId, was, to) {
+      return (
+        db
+          .query(
+            `UPDATE checks_waiting SET event_id = ?
+             WHERE board_id = ? AND arrival_id = ? AND event_id = ? AND closed_at IS NULL`,
+          )
+          .run(to, boardId, arrivalId, was).changes === 1
+      );
+    },
+
     close: () => db.close(),
   };
 }
+
+interface NoticeRow {
+  notice_id: string;
+  notice: string;
+  board_id: string;
+  card_id: string;
+  decision_kind: string | null;
+  decision_id: string | null;
+  body: string;
+  received_at: string;
+  room_id: string | null;
+  reply_to: string | null;
+  claimed_at: string | null;
+  prose_event_id: string | null;
+  posted_at: string | null;
+  dropped_at: string | null;
+  reposted_at: string | null;
+  card_moved_at: string | null;
+}
+
+const toNotice = (row: NoticeRow): Notice => ({
+  noticeId: row.notice_id,
+  notice: row.notice as NoticeKind,
+  boardId: row.board_id,
+  cardId: row.card_id,
+  decisionKind: row.decision_kind,
+  decisionId: row.decision_id,
+  body: JSON.parse(row.body) as unknown,
+  receivedAt: row.received_at,
+  roomId: row.room_id,
+  replyTo: row.reply_to,
+  claimedAt: row.claimed_at,
+  proseEventId: row.prose_event_id,
+  postedAt: row.posted_at,
+  droppedAt: row.dropped_at,
+  repostedAt: row.reposted_at,
+  cardMovedAt: row.card_moved_at,
+});
+
+interface EscalationInviteRow {
+  board_id: string;
+  user_id: string;
+  room_id: string;
+  invited_at: string;
+  joined_at: string | null;
+  reposted_at: string | null;
+  repost_attempts: number;
+}
+
+const toEscalationInvite = (row: EscalationInviteRow): EscalationInvite => ({
+  boardId: row.board_id,
+  userId: row.user_id,
+  roomId: row.room_id,
+  invitedAt: row.invited_at,
+  joinedAt: row.joined_at,
+  repostedAt: row.reposted_at,
+  repostAttempts: row.repost_attempts,
+});
+
+interface ChecksWaitingRow {
+  board_id: string;
+  arrival_id: string;
+  card_id: string;
+  card_title: string;
+  stage_key: string;
+  stage_name: string | null;
+  room_id: string;
+  event_id: string | null;
+  claimed_at: string;
+  posted_at: string | null;
+  closed_at: string | null;
+}
+
+const toChecksWaiting = (row: ChecksWaitingRow): ChecksWaiting => ({
+  boardId: row.board_id,
+  arrivalId: row.arrival_id,
+  cardId: row.card_id,
+  cardTitle: row.card_title,
+  stageKey: row.stage_key,
+  stageName: row.stage_name,
+  roomId: row.room_id,
+  eventId: row.event_id,
+  claimedAt: row.claimed_at,
+  postedAt: row.posted_at,
+  closedAt: row.closed_at,
+});
 
 interface BoardRoomRow {
   board_id: string;

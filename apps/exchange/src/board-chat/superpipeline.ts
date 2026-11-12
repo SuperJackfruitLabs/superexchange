@@ -1,8 +1,9 @@
 /**
  * SuperPipeline, as board chat needs it: resolving a gate, answering a question, recording a
- * follow-up's live link (or switching it to automatic delivery) and resuming or archiving a waiting
- * card, each as the person who answered; and reading a board's gates, questions, follow-ups and
- * waiting cards with this service's own token for the sweeps.
+ * follow-up's live link (or switching it to automatic delivery), resuming or archiving a waiting
+ * card, pulling a held approval back and overriding a check, each as the person who answered; and
+ * reading a board's gates, questions, follow-ups, waiting cards and a card's checks with this
+ * service's own token for the sweeps and the notices.
  *
  * Resolving **as the person who answered**, with an assertion minted for that answer, is ported
  * from the AgentPod hub's `services/board-chat/gate-resolve.ts` (`resolveGateAtSuperpipeline`):
@@ -25,7 +26,9 @@
  * (`delivery.pending` bodies) and `GET /v1/boards/:boardId/attention/pending` (`attention.pending`
  * bodies) are read the same way; SuperPipeline does not yet admit a service token on either (they
  * are agent-or-person routes there), so until it does they are refused and the sweeps that read
- * them settle nothing. Only reads: deciding stays with the person. A refusal
+ * them settle nothing. `GET /v1/boards/:boardId/cards/:cardId/checks` (a card's checks, which an
+ * escalation of overdue checks lists) is read the same way, and is not admitted for a service token
+ * there yet either. Only reads: deciding stays with the person. A refusal
  * throws `SuperpipelineError`, because "nothing pending" and "this token is refused" must never
  * read alike; a 401 also drops the held token, so the next read asks the plane for a new one.
  */
@@ -190,6 +193,58 @@ export async function answerAttentionAtSuperpipeline(
   );
 }
 
+export interface PullBackInput {
+  boardId: string;
+  gateId: string;
+  comment: string;
+  principalId: string;
+  senderMxid: string;
+}
+
+/**
+ * Pull a held approval back before its release time, as the person who sent the pull-back (the
+ * hub's `pullBackAtSuperpipeline`): `POST /v1/boards/:boardId/gates/:gateId/pull-back` with the
+ * person's assertion and `{ comment }`. A person-only route, judged like a decision on the gate.
+ */
+export async function pullBackAtSuperpipeline(
+  input: PullBackInput,
+  deps: ResolveDeps,
+): Promise<ResolveResult> {
+  return postAsPerson(
+    input,
+    `/v1/boards/${encodeURIComponent(input.boardId)}/gates/${encodeURIComponent(input.gateId)}/pull-back`,
+    { comment: input.comment },
+    deps,
+  );
+}
+
+export interface CheckOverrideInput {
+  boardId: string;
+  cardId: string;
+  checkName: string;
+  comment: string;
+  principalId: string;
+  senderMxid: string;
+}
+
+/**
+ * Override a machine check, as the person who sent the override (the hub's
+ * `overrideCheckAtSuperpipeline`): `POST /v1/boards/:boardId/cards/:cardId/checks/:name/override`
+ * with the person's assertion and `{ comment }`. The board judges who may (a workspace owner or
+ * admin by the role in the verified token, never the producer of the work).
+ */
+export async function overrideCheckAtSuperpipeline(
+  input: CheckOverrideInput,
+  deps: ResolveDeps,
+): Promise<ResolveResult> {
+  return postAsPerson(
+    input,
+    `/v1/boards/${encodeURIComponent(input.boardId)}/cards/${encodeURIComponent(input.cardId)}/checks/${encodeURIComponent(input.checkName)}/override`,
+    { comment: input.comment },
+    deps,
+  );
+}
+
 /** POST `body` to `path` as the person: an assertion minted for them, never this service's token. */
 async function postAsPerson(
   who: { principalId: string; senderMxid: string },
@@ -296,6 +351,14 @@ export interface SuperpipelineReads {
   pendingFollowups(boardId: string): Promise<unknown[]>;
   /** The cards waiting on a person, unchecked: each is read with `isAttentionPending`. */
   pendingAttention(boardId: string): Promise<unknown[]>;
+  /**
+   * A card's checks on its latest arrival at a stage with checks, unchecked (treaty's `checksV2`
+   * reads them), or null when it never reached one or the board answers in another shape.
+   */
+  cardChecks(
+    boardId: string,
+    cardId: string,
+  ): Promise<{ stageKey: string; status: string; checks: unknown[] } | null>;
 }
 
 export interface ReadsDeps {
@@ -375,6 +438,23 @@ export function createSuperpipelineReads(deps: ReadsDeps): SuperpipelineReads {
       if (!Array.isArray(waiting))
         throw new SuperpipelineError(200, "malformed_response");
       return waiting as unknown[];
+    },
+
+    async cardChecks(boardId, cardId) {
+      const body = await read(
+        `/v1/boards/${enc(boardId)}/cards/${enc(cardId)}/checks`,
+      );
+      const view = field(body, "checks");
+      const stageKey = field(view, "stageKey");
+      const status = field(view, "status");
+      const checks = field(view, "checks");
+      if (
+        typeof stageKey !== "string" ||
+        typeof status !== "string" ||
+        !Array.isArray(checks)
+      )
+        return null;
+      return { stageKey, status, checks: checks as unknown[] };
     },
 
     async gate(boardId, gateId) {

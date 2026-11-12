@@ -2,7 +2,8 @@
 
 The suite's communication server: a Matrix Application Service that carries board work into chat
 and the answers back. A gate, a question, a follow-up or a waiting card on a SuperPipeline board
-appears in that board's room, and an answer given in chat reaches the board. It takes those
+appears in that board's room, the board's reminders, escalations and other notices about it are said
+there, and an answer given in chat reaches the board. It takes those
 events from the suite's event relay, and it speaks in board rooms under its own registration on
 the homeserver.
 
@@ -114,10 +115,55 @@ it serves both on its service routes under `gates:read` (as it serves `gates/pen
 reads as unreadable to these two sweeps, nothing is settled by them, and they back off; the relay
 path and answers work without them.
 
-**Not yet: reminders and escalations.** The relay carries only `gate.pending`,
-`elicitation.pending`, `delivery.pending` and `attention.pending`, so a decision
-that goes unanswered is not reminded or escalated in its room. That needs SuperPipeline to relay
-`decision.reminded` and `decision.escalated` to SuperExchange, a later change.
+**Board-room notices.** What the board says about work already in a room arrives from the relay
+as seven CloudEvents types (`com.superjackfruit.superpipeline.…v1`), each checked with treaty's
+predicate and its `event`, for opted-in, enabled boards, recorded once and said once as a reply to
+the card it concerns, built by treaty:
+
+- `decision.reminded`: treaty's notice in reply to the waiting card (a gate, question, follow-up or
+  waiting card). Overdue checks have no card: their reminder stands alone.
+- `decision.escalated`: the workspace's owners and admins with a linked Matrix id are invited into
+  the room, each once per board (one who leaves is not invited back; an invite the homeserver
+  refuses is tried at the next escalation), then the notice in reply to the card. The plane lists
+  this service's own workspace (`GET /api/principals?kind=human`, then
+  `GET /api/principals/:id/identities?system=matrix`, needing `principals:read` and
+  `identities:read`), so a board whose `orgId` is another workspace escalates to nobody. Overdue
+  checks escalate with a `dev.agentpod.checks.waiting.v2` card listing them, read from
+  `GET /v1/boards/:boardId/cards/:cardId/checks`; the notice replies to it. When an invited admin
+  joins, each still-open escalated card is posted again below from a fresh read of the board (its
+  record moves to the new copy only if the board still offers what was recorded; the old copy is
+  told it moved, and an answer to it then acts on nothing), and the notice again in reply to it. A
+  board that cannot be read gets the notice alone.
+- `gate.approval_recorded`: a quorum gate's progress ("Approved by Ana — 1 of 2. Waiting for 1
+  more.") in reply to the gate, and `dev.agentpod.gate.progress.v2`; the count is recorded on the
+  gate, never walked back.
+- `decision.released`, `decision.pulled_back`: in reply to the gate (settled or not: they follow a
+  held approval's receipt), and `dev.agentpod.decision.released.v2` / `….pulled_back.v2`.
+- `check.failed`, `check.overridden`: a line in the board's room, in reply to the open
+  checks.waiting card for that card and stage when there is one, and the structured half
+  (`dev.agentpod.check.failed.v2` / `….overridden.v2`). A failure that sent the card back closes
+  that card.
+
+A notice about a card this service never posted (or one already settled, for a reminder, an
+escalation or progress) is answered `ignored` and never said, as the hub does. Who did something is
+named by the plane's label, never an id. Each send is under a transaction id derived from the
+notice; one that fails keeps its claim and is sent again at boot, when a person joins, and every
+`SUPEREXCHANGE_SWEEP_SECONDS`.
+
+**Pull-backs and overrides from chat.** A `dev.superpipeline.gate.pull_back.v2` referencing a gate
+posted here, in its room, and a `dev.superpipeline.check.override.v2` referencing a checks.waiting
+card posted here (its room, board and card), are carried as the person who sent them
+(`POST /v1/boards/:boardId/gates/:gateId/pull-back` and
+`POST /v1/boards/:boardId/cards/:cardId/checks/:name/override`, each `{ comment }`, with the
+organization plane's assertion). Only a person; a comment is required, within 8192 bytes; the
+board's refusal is said in the room. Success says nothing: the board's `decision.pulled_back` or
+`check.overridden` does.
+
+**SuperPipeline must still:** relay the seven notice types to SuperExchange; and admit this
+service's token on `GET /v1/boards/:boardId/cards/:cardId/checks` (it is a person-or-agent route
+there). Until it does, overdue checks escalate with the notice alone (a refused read is not
+retried), and the re-post on an admin's join can move only gates and questions (the follow-up and
+waiting-card lists are not admitted either, above).
 
 **Board rooms are end-to-end encrypted, with SuperExchange's own keys.** The speaker has one
 device, taken once from an appservice login and recorded in the store, so a restart reuses it;
@@ -137,14 +183,14 @@ an encrypted room never gets plaintext, and a room made in plaintext (staging, b
 is left as it is. With the switch off nothing is posted into such a room, encrypted or not; that
 board's chat comes back when it is re-opted in for a new room (not built yet).
 
-| Route                                                | Who calls it   | What it does                                                                                                        |
-| ---------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `GET /healthz`                                       | anyone         | The health check                                                                                                    |
-| `PUT /_matrix/app/v1/transactions/:txn`              | the homeserver | Events in, applied once per transaction id                                                                          |
-| `POST /_matrix/app/v1/ping`                          | the homeserver | `{}`                                                                                                                |
-| `GET /_matrix/app/v1/users/…`, `rooms/…`             | the homeserver | `M_NOT_FOUND` until rooms move here                                                                                 |
-| `POST /v1/relay/events`                              | the relay      | A signed `gate.pending`, `elicitation.pending`, `delivery.pending` or `attention.pending`, kept for opted-in boards |
-| `GET /v1/boards`, `PUT`/`DELETE /v1/boards/:boardId` | the operator   | Opt a board in, disable it, list them                                                                               |
+| Route                                                | Who calls it   | What it does                                                                                                                           |
+| ---------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /healthz`                                       | anyone         | The health check                                                                                                                       |
+| `PUT /_matrix/app/v1/transactions/:txn`              | the homeserver | Events in, applied once per transaction id                                                                                             |
+| `POST /_matrix/app/v1/ping`                          | the homeserver | `{}`                                                                                                                                   |
+| `GET /_matrix/app/v1/users/…`, `rooms/…`             | the homeserver | `M_NOT_FOUND` until rooms move here                                                                                                    |
+| `POST /v1/relay/events`                              | the relay      | A signed `gate.pending`, `elicitation.pending`, `delivery.pending`, `attention.pending` or board-room notice, kept for opted-in boards |
+| `GET /v1/boards`, `PUT`/`DELETE /v1/boards/:boardId` | the operator   | Opt a board in, disable it, list them                                                                                                  |
 
 ## Run it
 
@@ -163,22 +209,22 @@ bun apps/exchange/src/main.ts
 curl http://127.0.0.1:8080/healthz
 ```
 
-| Setting                               | What it is                                                                                                                            |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `MATRIX_HOMESERVER_URL`               | Where the homeserver's client-server API answers                                                                                      |
-| `MATRIX_SERVER_NAME`                  | The homeserver's server name                                                                                                          |
-| `MATRIX_AS_TOKEN`                     | The `as_token` of this appservice's registration                                                                                      |
-| `MATRIX_HS_TOKEN`                     | The `hs_token` of this appservice's registration                                                                                      |
-| `TREATY_RELAY_DELIVERY_SECRET`        | The secret the event relay signs its deliveries to this service                                                                       |
-| `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256` | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards`                                                           |
-| `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset                                                                       |
-| `PORT`                                | Where it listens; 8080 when unset                                                                                                     |
-| `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                                                                                     |
-| `SUPEREXCHANGE_CRYPTO_PASSPHRASE`     | At least 32 characters; encrypts the speaker's crypto store. Required while plaintext rooms are off; unset, nothing is encrypted      |
-| `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                                                                                       |
-| `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                                                                              |
-| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved and read; also the assertion and service-token audience                                 |
-| `SUPEREXCHANGE_SWEEP_SECONDS`         | How often the gate, question, follow-up and waiting-card sweeps ask each enabled board: whole seconds from 15 to 86400; 60 when unset |
+| Setting                               | What it is                                                                                                                                                                  |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MATRIX_HOMESERVER_URL`               | Where the homeserver's client-server API answers                                                                                                                            |
+| `MATRIX_SERVER_NAME`                  | The homeserver's server name                                                                                                                                                |
+| `MATRIX_AS_TOKEN`                     | The `as_token` of this appservice's registration                                                                                                                            |
+| `MATRIX_HS_TOKEN`                     | The `hs_token` of this appservice's registration                                                                                                                            |
+| `TREATY_RELAY_DELIVERY_SECRET`        | The secret the event relay signs its deliveries to this service                                                                                                             |
+| `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256` | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards`                                                                                                 |
+| `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset                                                                                                             |
+| `PORT`                                | Where it listens; 8080 when unset                                                                                                                                           |
+| `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                                                                                                                           |
+| `SUPEREXCHANGE_CRYPTO_PASSPHRASE`     | At least 32 characters; encrypts the speaker's crypto store. Required while plaintext rooms are off; unset, nothing is encrypted                                            |
+| `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                                                                                                                             |
+| `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                                                                                                                    |
+| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved and read; also the assertion and service-token audience                                                                       |
+| `SUPEREXCHANGE_SWEEP_SECONDS`         | How often the gate, question, follow-up and waiting-card sweeps ask each enabled board, and unposted notices are tried again: whole seconds from 15 to 86400; 60 when unset |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 

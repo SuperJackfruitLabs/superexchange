@@ -8,10 +8,15 @@
  *
  * - not a CloudEvent: 400, before the signature is checked (there is no id to check it over);
  * - a bad, stale or missing signature: 401;
- * - any type but `gate.pending`, `elicitation.pending`, `delivery.pending` and `attention.pending`
- *   (all v1): 200 `{status:"ignored"}`, so the relay does not retry what this build will never
- *   handle;
- * - a body that is not what its type says (a gate, a question, a follow-up, a waiting card): 400;
+ * - any type but `gate.pending`, `elicitation.pending`, `delivery.pending`, `attention.pending` and
+ *   the board-room notices (`decision.reminded`, `decision.escalated`, `gate.approval_recorded`,
+ *   `decision.released`, `decision.pulled_back`, `check.failed`, `check.overridden`; all v1,
+ *   `notices.ts`): 200 `{status:"ignored"}`, so the relay does not retry what this build will
+ *   never handle;
+ * - a body that is not what its type says (a gate, a question, a follow-up, a waiting card, a
+ *   notice by treaty's predicate and its `event`): 400;
+ * - a notice whose card was never posted here, or is settled, or a board with no room: 200
+ *   `{status:"ignored"}`;
  * - one for an opted-in, enabled board: recorded once, 200 `{status:"accepted"}`, and handed to
  *   board chat to post (a redelivery too: one not yet posted is tried again);
  * - one for any other board, and an approval request for a board outside this
@@ -28,6 +33,8 @@ import {
   ELICITATION_PENDING_V1,
   GATE_PENDING_V1,
   intakeAttention,
+  intakeNotice,
+  noticeTypeOf,
   intakeFollowup,
   intakeGate,
   intakeQuestion,
@@ -51,6 +58,16 @@ export interface RelayDeps {
     | "recordQuestionDelivery"
     | "recordFollowupDelivery"
     | "recordAttentionDelivery"
+    | "boardRoom"
+    | "notice"
+    | "recordNotice"
+    | "gateEvent"
+    | "gateDelivery"
+    | "questionEvent"
+    | "questionDelivery"
+    | "followupEvent"
+    | "attentionEvent"
+    | "checksWaiting"
   >;
   log?: (line: string) => void;
   /** Told of each accepted gate (new or redelivered), to post it. Must not throw or wait. */
@@ -61,6 +78,8 @@ export interface RelayDeps {
   onFollowupAccepted?: (gateId: string) => void;
   /** Told of each accepted waiting card (new or redelivered), to post it. Must not throw or wait. */
   onAttentionAccepted?: (key: WaitKey) => void;
+  /** Told of each accepted board-room notice (new or redelivered), to post it. Must not throw or wait. */
+  onNoticeAccepted?: (noticeId: string) => void;
   /** May an approval request on this board be kept? Absent: never. */
   approvalRequestAllowed?: ApprovalRequestAllowed;
   /** Test seam for the signature's clock. */
@@ -99,7 +118,9 @@ export function createRelayHandler(deps: RelayDeps) {
     }
 
     const type = attributes.type;
+    const noticeType = noticeTypeOf(type);
     if (
+      noticeType === undefined &&
       type !== GATE_PENDING_V1 &&
       type !== ELICITATION_PENDING_V1 &&
       type !== DELIVERY_PENDING_V1 &&
@@ -115,6 +136,29 @@ export function createRelayHandler(deps: RelayDeps) {
       return Response.json({ error: "not JSON" }, { status: 400 });
     }
 
+    if (noticeType !== undefined && type !== undefined) {
+      const intake = intakeNotice(deps.store, type, body);
+      if (intake.status === "invalid") {
+        log(
+          `relay: event ${JSON.stringify(id)} refused: not a ${noticeType.what}`,
+        );
+        return Response.json(
+          { error: `not a ${noticeType.what}` },
+          { status: 400 },
+        );
+      }
+      if (intake.status === "ignored") {
+        log(
+          `relay: a ${noticeType.what} event ${JSON.stringify(id)} ignored (${intake.reason})`,
+        );
+        return Response.json({ status: "ignored" });
+      }
+      log(
+        `relay: a ${noticeType.what} for ${intake.boardId} ${intake.duplicate ? "already recorded" : "recorded"}`,
+      );
+      deps.onNoticeAccepted?.(intake.noticeId);
+      return Response.json({ status: "accepted" });
+    }
     if (type === DELIVERY_PENDING_V1) {
       const intake = intakeFollowup(deps.store, body);
       if (intake.status === "invalid") {
