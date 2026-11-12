@@ -49,7 +49,26 @@ describe("loadConfig", () => {
         secret: "plane-secret-for-tests",
       },
       superpipelineUrl: "https://pipeline.example",
+      sweepSeconds: 60,
     });
+  });
+
+  test("the sweep interval is whole seconds from 15 to a day, 60 when unset", () => {
+    expect(
+      loadConfig({ ...FULL, SUPEREXCHANGE_SWEEP_SECONDS: "15" }).sweepSeconds,
+    ).toBe(15);
+    expect(
+      loadConfig({ ...FULL, SUPEREXCHANGE_SWEEP_SECONDS: " 300 " })
+        .sweepSeconds,
+    ).toBe(300);
+    expect(
+      loadConfig({ ...FULL, SUPEREXCHANGE_SWEEP_SECONDS: "" }).sweepSeconds,
+    ).toBe(60);
+    for (const bad of ["14", "0", "-60", "1.5", "60s", "86401", "1e3"]) {
+      expect(problems({ ...FULL, SUPEREXCHANGE_SWEEP_SECONDS: bad })).toEqual([
+        "SUPEREXCHANGE_SWEEP_SECONDS is not a whole number of seconds from 15 to 86400",
+      ]);
+    }
   });
 
   test("the organization plane and SuperPipeline are http(s) URLs", () => {

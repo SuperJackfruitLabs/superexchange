@@ -94,6 +94,7 @@ describe("relay deliveries", () => {
     expect(store.gateDelivery("gte_1")).toEqual({
       boardId: "brd_7c1f",
       body: gateBody(),
+      settledAt: null,
     });
 
     const again = await handle(
