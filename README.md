@@ -21,7 +21,7 @@ has opted in. For each such gate it makes the board's room once (speaker
 `@superexchange_board`, shown as "superpipeline"; alias `#superexchange_board_<board id>`),
 invites the board's people, holds the gate until one of them has joined, then posts it exactly
 once: the gate.v2 prose message and the gate card, both built by treaty. Gates not yet posted are
-tried again at boot and when a person joins.
+tried again at boot, when a person joins, and by the sweep.
 
 A person's answer to a gate card (`gate.decision` v1 or v2, read by treaty) is carried back: in a
 board room this service owns, naming a gate it posted there and referencing its card or prose,
@@ -29,8 +29,32 @@ from a sender outside `@superexchange_*`. The organization plane says who the se
 person may answer, and a gate.v2 answer must name an option, subject or variant the gate offered.
 The plane then asserts the sender for SuperPipeline, the gate is resolved there as that person,
 and one receipt is posted (a prose line and `dev.superpipeline.gate.outcome.v1`). An answer acts
-once: a repeat is told the gate was already decided. Questions, follow-ups, waiting cards and the
-sweeps move here from the AgentPod hub in later steps.
+once: a repeat is told the gate was already decided. Questions, follow-ups and waiting cards move
+here from the AgentPod hub in later steps.
+
+**The gate sweep** asks every enabled board, one at a time, what it is still waiting on: at boot
+and every `SUPEREXCHANGE_SWEEP_SECONDS`. It reads with this service's own token from the
+organization plane (`POST /api/token/service`, audience `SUPERPIPELINE_URL`, held until shortly
+before it expires), which needs the `gates:read` scope on SuperPipeline's service routes
+(`GET /v1/boards/:boardId/gates/pending` and `GET /v1/boards/:boardId/gates/:gateId`).
+
+- A pending gate the relay never delivered here is recorded as if it had been, and posted like
+  any other. A delivered gate not yet posted is offered again.
+- A gate decided anywhere else (on the web, in `supi`, by another path) is settled: when the
+  board reads it as resolved, the receipt an answer in chat would have posted (treaty's prose
+  line and `dev.superpipeline.gate.outcome.v1`, pointing at the card) is posted once, encrypted
+  in an encrypted room. The sweep and the answer path share one claim, so a gate answered in chat
+  and then seen resolved has one receipt; a later answer in chat is told it was already decided.
+  A gate decided before it was ever posted is never posted.
+- A gate the board does not read as resolved with a decision is left as it is: absence from the
+  pending list is not a decision. A board that cannot be read (404 for a board outside this
+  service's workspace, 403 without `gates:read`, the board or the plane down) settles nothing,
+  is logged, and the boards after it are still asked. A pass in which every board failed waits
+  twice as long before the next, up to eight times the interval.
+
+**Not yet: reminders and escalations.** The relay carries only `gate.pending` today, so a gate
+that goes unanswered is not reminded or escalated in its room. That needs SuperPipeline to relay
+`decision.reminded` and `decision.escalated` to SuperExchange, a later change.
 
 **Board rooms are end-to-end encrypted, with SuperExchange's own keys.** The speaker has one
 device, taken once from an appservice login and recorded in the store, so a restart reuses it;
@@ -90,7 +114,8 @@ curl http://127.0.0.1:8080/healthz
 | `SUPEREXCHANGE_CRYPTO_PASSPHRASE`     | At least 32 characters; encrypts the speaker's crypto store. Required while plaintext rooms are off; unset, nothing is encrypted |
 | `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                                                                                  |
 | `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                                                                         |
-| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved; also the assertion audience                                                       |
+| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved and read; also the assertion and service-token audience                            |
+| `SUPEREXCHANGE_SWEEP_SECONDS`         | How often the gate sweep asks each enabled board: whole seconds from 15 to 86400; 60 when unset                                  |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 
