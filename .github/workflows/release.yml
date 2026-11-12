@@ -61,6 +61,19 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
           persist-credentials: false
+      # The kit's scripts come from this workflow's own commit (the tag on a push, main on a
+      # dispatch), never from an older tag's tree, and live outside the product's checkout.
+      - name: The kit's scripts, from this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-kit
+          sparse-checkout: .github/release
+          persist-credentials: false
+      - name: Move the kit's scripts out of the checkout
+        run: |
+          mv .release-kit "$RUNNER_TEMP/release-kit"
+          echo "KIT=$RUNNER_TEMP/release-kit/.github/release" >> "$GITHUB_ENV"
       - name: The tag's commit
         id: commit
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
@@ -119,7 +132,7 @@ jobs:
         run: |
           wf=$(jq -r '.ci_workflow // empty' .github/release-config.json)
           if [ -z "$wf" ]; then
-            sh .github/release/ci-gate.sh .github/release-config.json "$SHA"
+            sh "$KIT"/ci-gate.sh .github/release-config.json "$SHA"
             exit 0
           fi
           echo "source=github" >> "$GITHUB_OUTPUT"
@@ -165,6 +178,19 @@ jobs:
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
+      # The kit's scripts come from this workflow's own commit (the tag on a push, main on a
+      # dispatch), never from an older tag's tree, and live outside the product's checkout.
+      - name: The kit's scripts, from this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-kit
+          sparse-checkout: .github/release
+          persist-credentials: false
+      - name: Move the kit's scripts out of the checkout
+        run: |
+          mv .release-kit "$RUNNER_TEMP/release-kit"
+          echo "KIT=$RUNNER_TEMP/release-kit/.github/release" >> "$GITHUB_ENV"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -183,7 +209,7 @@ jobs:
       - name: Named secrets
         env:
           KIT_SECRETS: ${{ toJSON(secrets) }}
-        run: sh .github/release/kit.sh secrets .github/release-config.json
+        run: sh "$KIT"/kit.sh secrets .github/release-config.json
       - name: Publish
         run: sh "$(jq -r '.publish.script' .github/release-config.json)"
 
@@ -211,6 +237,19 @@ jobs:
           ref: ${{ needs.gate.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
+      # The kit's scripts come from this workflow's own commit (the tag on a push, main on a
+      # dispatch), never from an older tag's tree, and live outside the product's checkout.
+      - name: The kit's scripts, from this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-kit
+          sparse-checkout: .github/release
+          persist-credentials: false
+      - name: Move the kit's scripts out of the checkout
+        run: |
+          mv .release-kit "$RUNNER_TEMP/release-kit"
+          echo "KIT=$RUNNER_TEMP/release-kit/.github/release" >> "$GITHUB_ENV"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
@@ -273,7 +312,7 @@ jobs:
 
       - name: Checksums
         id: sums
-        run: sh .github/release/kit.sh checksums release-dist >> "$GITHUB_OUTPUT"
+        run: sh "$KIT"/kit.sh checksums release-dist >> "$GITHUB_OUTPUT"
       - name: Provenance
         if: steps.sums.outputs.files == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -281,13 +320,13 @@ jobs:
           subject-path: release-dist/**
 
       - name: Release notes — material
-        run: echo "PREV=$(sh .github/release/kit.sh material "$TAG" .)" >> "$GITHUB_ENV"
+        run: echo "PREV=$(sh "$KIT"/kit.sh material "$TAG" .)" >> "$GITHUB_ENV"
       # A first release has no previous tag: git-cliff then takes every commit up to HEAD, which
       # is the tag. It cannot read a bare tag as a range.
       - name: Release notes — grouped commits
         uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
         with:
-          config: .github/release/cliff.toml
+          config: ${{ env.KIT }}/cliff.toml
           args: ${{ env.PREV && format('{0}..{1}', env.PREV, env.TAG) || '' }} --strip header
         env:
           OUTPUT: grouped.md
@@ -302,7 +341,7 @@ jobs:
           export RELEASE_SUMMARY_BASE_URL RELEASE_SUMMARY_MODEL
           [ -n "$RELEASE_SUMMARY_BASE_URL" ] || unset RELEASE_SUMMARY_BASE_URL
           [ -n "$RELEASE_SUMMARY_MODEL" ] || unset RELEASE_SUMMARY_MODEL
-          timeout 120 node .github/release/summarise.mjs --product "$PRODUCT" \
+          timeout 120 node "$KIT"/summarise.mjs --product "$PRODUCT" \
             --version "$TAG" --changelog changelog-section.md --log commit-log.txt \
             --stat diff-stat.txt --out summary.md || true
       - name: Release notes — assemble
@@ -345,7 +384,7 @@ jobs:
       - name: Named secrets
         env:
           KIT_SECRETS: ${{ toJSON(secrets) }}
-        run: sh .github/release/kit.sh secrets "$CONFIG"
+        run: sh "$KIT"/kit.sh secrets "$CONFIG"
       # `deploy` is a script, or {"ssh_command": "<door>"}: the production host's forced-command
       # key, run as `ssh <ssh_user>@$PROD_HOST <door> <tag>`. Scripts see the same PROD_* values,
       # TAG, RELEASE_SHA, CI_RUN_ID (main CI's run, for its other artifacts) and GH_TOKEN.
@@ -445,6 +484,19 @@ jobs:
         with:
           ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
+      # The kit's scripts come from this workflow's own commit (the tag on a push, main on a
+      # dispatch), never from an older tag's tree, and live outside the product's checkout.
+      - name: The kit's scripts, from this workflow's commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .release-kit
+          sparse-checkout: .github/release
+          persist-credentials: false
+      - name: Move the kit's scripts out of the checkout
+        run: |
+          mv .release-kit "$RUNNER_TEMP/release-kit"
+          echo "KIT=$RUNNER_TEMP/release-kit/.github/release" >> "$GITHUB_ENV"
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
@@ -469,7 +521,7 @@ jobs:
       - name: Named secrets
         env:
           KIT_SECRETS: ${{ toJSON(secrets) }}
-        run: sh .github/release/kit.sh secrets .github/release-config.json
+        run: sh "$KIT"/kit.sh secrets .github/release-config.json
       - name: Publish
         run: RELEASE_DIST="$PWD/release-dist" sh "$(jq -r '.publish.script' .github/release-config.json)"
 
@@ -484,7 +536,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: refs/tags/${{ env.TAG }}
+          # This workflow's commit (main): the old tag's tree may predate the kit. The material is
+          # read from the tag through git.
+          ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
