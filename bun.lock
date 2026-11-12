@@ -16,7 +16,7 @@
       "dependencies": {
         "@matrix-org/matrix-sdk-crypto-nodejs": "0.6.6",
         "@superjackfruitlabs/treaty-cloudevents": "0.0.6",
-        "@superjackfruitlabs/treaty-matrix-events": "0.0.11",
+        "@superjackfruitlabs/treaty-matrix-events": "0.0.12",
       },
     },
   },
@@ -68,7 +68,7 @@
 
     "@superjackfruitlabs/treaty-cloudevents": ["@superjackfruitlabs/treaty-cloudevents@0.0.6", "", {}, "sha512-+I0C/1M2Y1qoCTm7Pw0ovlJNamdVt8QDtM6KWurN0n46bO1JeQE1OxLxEVugIZ2ZxSbEZfY//1uAzjDsqZ7PgQ=="],
 
-    "@superjackfruitlabs/treaty-matrix-events": ["@superjackfruitlabs/treaty-matrix-events@0.0.11", "", {}, "sha512-lGRhxh6ul1Te8gHNI/9t6jpMWS2TV8iHwUpmi2m8KL8/MuLLdAJeMYYkeVFy45TV50vfvIT8GXN8eHS4iZjbGg=="],
+    "@superjackfruitlabs/treaty-matrix-events": ["@superjackfruitlabs/treaty-matrix-events@0.0.12", "", {}, "sha512-maaSqf50Dq+VLXlVVsRG8+g7m5eP5lQzb3IagQX04mmBqc85P4cVw/xhqBDLegvFRZRqN3HC/vOfe8nNFznecg=="],
 
     "@types/bun": ["@types/bun@1.2.8", "", { "dependencies": { "bun-types": "1.2.7" } }, "sha512-t8L1RvJVUghW5V+M/fL3Thbxcs0HwNsXsnTEBEfEVqGteiJToOlZ/fyOEaR1kZsNqnu+3XA4RI/qmnX4w6+S+w=="],
 
