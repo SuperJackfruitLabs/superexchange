@@ -646,7 +646,7 @@ describe("migration 8: board-room notices", () => {
     db.close();
     const store = openStore(dir);
     cleanups.push(() => store.close());
-    expect(store.schemaVersion()).toBe(8);
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
     expect(store.followupDelivery("g1")?.boardId).toBe("brd_a");
   });
 
@@ -723,5 +723,35 @@ describe("migration 8: board-room notices", () => {
     store.closeChecksWaiting("brd_a", "arr_1");
     expect(store.openChecksWaiting("brd_a", "c1", "review", "!r:x")).toBeNull();
     expect(store.moveChecksWaiting("brd_a", "arr_1", "$d", "$e")).toBe(false);
+  });
+});
+
+describe("migration 9: link hints", () => {
+  test("a database at version 8 takes them, and keeps what it had", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 8));
+    db.exec(
+      "INSERT INTO followup_deliveries (gate_id, board_id, received_at, body) VALUES ('g1', 'brd_a', 't0', '{}')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(MIGRATIONS).toHaveLength(9);
+    expect(store.schemaVersion()).toBe(9);
+    expect(store.followupDelivery("g1")?.boardId).toBe("brd_a");
+    expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(true);
+  });
+
+  test("a hint is claimed once per sender, room and day; an earlier day is forgotten", () => {
+    const { store } = fresh();
+    expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(true);
+    expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(false);
+    expect(store.claimLinkHint("@a:x", "!r:y", "2026-11-12")).toBe(true);
+    expect(store.claimLinkHint("@b:x", "!r:x", "2026-11-12")).toBe(true);
+    expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-13")).toBe(true);
+    // The 12th's rows went when the 13th was claimed: a day only ever moves forward.
+    expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(true);
   });
 });

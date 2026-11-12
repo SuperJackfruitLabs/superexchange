@@ -75,6 +75,7 @@ export {
 export {
   ALREADY_DECIDED_TEXT,
   IDENTITY_UNAVAILABLE_TEXT,
+  LINK_HINT_TEXT,
   createGateAnswers,
   type AnswerOutcome,
   type GateAnswers,
