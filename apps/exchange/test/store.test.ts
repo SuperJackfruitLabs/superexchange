@@ -177,11 +177,11 @@ describe("the store", () => {
   test("a board's room is recorded once: the first record wins", () => {
     const { store } = fresh();
     expect(store.boardRoom("brd_a")).toBeNull();
-    const first = store.recordBoardRoom("brd_a", "!r1:x", "alias_a");
-    expect(first.roomId).toBe("!r1:x");
-    expect(store.recordBoardRoom("brd_a", "!r2:x", "alias_a").roomId).toBe(
-      "!r1:x",
-    );
+    const first = store.recordBoardRoom("brd_a", "!r1:x", "alias_a", true);
+    expect(first).toMatchObject({ roomId: "!r1:x", encrypted: true });
+    expect(
+      store.recordBoardRoom("brd_a", "!r2:x", "alias_a", false),
+    ).toMatchObject({ roomId: "!r1:x", encrypted: true });
     expect(store.boardRoomByRoomId("!r1:x")?.boardId).toBe("brd_a");
     expect(store.boardRoomByRoomId("!r2:x")).toBeNull();
   });
@@ -239,7 +239,7 @@ describe("the store", () => {
     db.close();
     const store = openStore(dir);
     cleanups.push(() => store.close());
-    expect(store.schemaVersion()).toBe(3);
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
     expect(store.gateEvent("g1")).toMatchObject({
       cardEventId: "$card",
       offer: null,
@@ -333,5 +333,64 @@ describe("the store", () => {
     expect(store.gateEvent("g1")?.outcomeClaimedAt).toBeNull();
     expect(store.gateEvent("g2")?.outcomeClaimedAt).not.toBeNull();
     expect(store.gateEvent("g3")?.outcomeClaimedAt).toBeNull();
+  });
+});
+
+describe("migration 4: encryption", () => {
+  test("a room recorded before it reads as plaintext, which every such room was", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 3));
+    db.exec(
+      "INSERT INTO board_rooms (board_id, room_id, alias, created_at) VALUES ('brd_a', '!r:x', 'alias_a', 't0')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(store.schemaVersion()).toBe(4);
+    expect(store.boardRoom("brd_a")).toMatchObject({
+      roomId: "!r:x",
+      encrypted: false,
+    });
+  });
+
+  test("the speaker's device is recorded once, kept across a reopen, and can be forgotten", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const store = openStore(dir);
+    expect(store.cryptoDevice("@s:x")).toBeNull();
+    expect(store.recordCryptoDevice("@s:x", "DEV1")).toBe("DEV1");
+    expect(store.recordCryptoDevice("@s:x", "DEV2")).toBe("DEV1");
+    store.close();
+    const again = openStore(dir);
+    cleanups.push(() => again.close());
+    expect(again.cryptoDevice("@s:x")).toBe("DEV1");
+    again.forgetCryptoDevice("@s:x");
+    expect(again.cryptoDevice("@s:x")).toBeNull();
+  });
+
+  test("an event parked once waits, oldest first, across a reopen, and is claimed once", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    let at = 0;
+    const now = () => new Date(Date.UTC(2026, 10, 12, 10, 0, at++));
+    const store = openStore(dir, { now });
+    expect(store.parkPendingDecrypt("$b", "!r:x", { n: 1 }, 10)).toBe(true);
+    expect(store.parkPendingDecrypt("$a", "!r:x", { n: 2 }, 10)).toBe(true);
+    expect(store.parkPendingDecrypt("$b", "!r:x", { n: 3 }, 10)).toBe(false);
+    store.close();
+    const again = openStore(dir, { now });
+    cleanups.push(() => again.close());
+    expect(again.pendingDecrypts().map((r) => [r.eventId, r.event])).toEqual([
+      ["$b", { n: 1 }],
+      ["$a", { n: 2 }],
+    ]);
+    expect(again.claimPendingDecrypt("$b")).toBe(true);
+    expect(again.claimPendingDecrypt("$b")).toBe(false);
+    // Over the bound, the oldest go.
+    again.parkPendingDecrypt("$c", "!r:x", {}, 2);
+    again.parkPendingDecrypt("$d", "!r:x", {}, 2);
+    expect(again.pendingDecrypts().map((r) => r.eventId)).toEqual(["$c", "$d"]);
   });
 });

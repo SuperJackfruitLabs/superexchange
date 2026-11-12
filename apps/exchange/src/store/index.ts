@@ -2,8 +2,9 @@
  * The service's own store: one SQLite database (`bun:sqlite`, WAL) in the data directory. It
  * holds what SuperExchange alone knows: the homeserver transactions already applied, the boards
  * an operator has pointed at it, the gates the event relay delivered for them, each board's room
- * and who is in it, which gates have been posted there with what they offered, and whether a
- * person's answer to each has acted and its receipt been posted.
+ * and who is in it (and whether it is end-to-end encrypted), which gates have been posted there
+ * with what they offered, whether a person's answer to each has acted and its receipt been
+ * posted, the speaker's encryption device, and encrypted events still waiting for their key.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -72,6 +73,21 @@ export const MIGRATIONS: readonly string[] = [
    ALTER TABLE gate_events ADD COLUMN quorum TEXT;
    ALTER TABLE gate_events ADD COLUMN outcome_claimed_at TEXT;
    ALTER TABLE gate_events ADD COLUMN outcome_posted_at TEXT;`,
+  // Every room recorded before this migration was made without encryption, so 0 is the truth
+  // for them, not a guess.
+  `ALTER TABLE board_rooms ADD COLUMN encrypted INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE crypto_devices (
+     user_id TEXT PRIMARY KEY,
+     device_id TEXT NOT NULL,
+     created_at TEXT NOT NULL
+   );
+   CREATE TABLE pending_decrypts (
+     event_id TEXT PRIMARY KEY,
+     room_id TEXT NOT NULL,
+     event TEXT NOT NULL,
+     first_seen_at TEXT NOT NULL
+   );
+   CREATE INDEX pending_decrypts_seen ON pending_decrypts (first_seen_at);`,
 ];
 
 export class StoreError extends Error {
@@ -106,7 +122,21 @@ export interface BoardRoom {
   roomId: string;
   /** The alias's localpart. */
   alias: string;
+  /**
+   * Whether the room is end-to-end encrypted. Fixed when the room is recorded: Matrix has no way
+   * to turn encryption off, and a plaintext room is never turned on here.
+   */
+  encrypted: boolean;
   createdAt: string;
+}
+
+/** An encrypted event waiting for the key that opens it, exactly as it was delivered. */
+export interface PendingDecrypt {
+  eventId: string;
+  roomId: string;
+  /** The event as the homeserver delivered it, still encrypted. */
+  event: Record<string, unknown>;
+  firstSeenAt: string;
 }
 
 /** One option a gate offered when it was posted. */
@@ -197,10 +227,15 @@ export interface Store {
   unpostedGates(boardId?: string): UnpostedGate[];
 
   /**
-   * Record a board's room. The first record wins: returns the room on record afterwards, which is
-   * this one unless another was recorded first.
+   * Record a board's room, and whether it is encrypted. The first record wins: returns the room
+   * on record afterwards, which is this one unless another was recorded first.
    */
-  recordBoardRoom(boardId: string, roomId: string, alias: string): BoardRoom;
+  recordBoardRoom(
+    boardId: string,
+    roomId: string,
+    alias: string,
+    encrypted: boolean,
+  ): BoardRoom;
   boardRoom(boardId: string): BoardRoom | null;
   /** The board room a Matrix room is, or null. */
   boardRoomByRoomId(roomId: string): BoardRoom | null;
@@ -241,6 +276,34 @@ export interface Store {
    * an answer, so such a claim was left by a run that stopped mid-answer. Answers how many.
    */
   releaseUnfinishedOutcomes(): number;
+
+  /** The encryption device recorded for a user, or null. */
+  cryptoDevice(userId: string): string | null;
+  /**
+   * Record a user's encryption device. The first record wins: answers the device on record
+   * afterwards, which is this one unless another was recorded first.
+   */
+  recordCryptoDevice(userId: string, deviceId: string): string;
+  /** Forget a user's device: its keys are gone, and the next start takes a new one. */
+  forgetCryptoDevice(userId: string): void;
+
+  /**
+   * Park an encrypted event until its key arrives. True when newly parked, false when it was
+   * already waiting. Over `max` waiting, the oldest are dropped.
+   */
+  parkPendingDecrypt(
+    eventId: string,
+    roomId: string,
+    event: Record<string, unknown>,
+    max: number,
+  ): boolean;
+  /** Every parked event, oldest first. */
+  pendingDecrypts(): PendingDecrypt[];
+  /**
+   * Take a parked event off the list. True only for the caller that removed it, so two retries
+   * never act on the same event twice.
+   */
+  claimPendingDecrypt(eventId: string): boolean;
   close(): void;
 }
 
@@ -402,10 +465,10 @@ export function openStore(
       }));
     },
 
-    recordBoardRoom(boardId, roomId, alias) {
+    recordBoardRoom(boardId, roomId, alias, encrypted) {
       db.query(
-        "INSERT INTO board_rooms (board_id, room_id, alias, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (board_id) DO NOTHING",
-      ).run(boardId, roomId, alias, stamp());
+        "INSERT INTO board_rooms (board_id, room_id, alias, encrypted, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (board_id) DO NOTHING",
+      ).run(boardId, roomId, alias, encrypted ? 1 : 0, stamp());
       return boardRoom(boardId) as BoardRoom;
     },
 
@@ -529,6 +592,79 @@ export function openStore(
         .run().changes;
     },
 
+    cryptoDevice(userId) {
+      const row = db
+        .query<
+          { device_id: string },
+          [string]
+        >("SELECT device_id FROM crypto_devices WHERE user_id = ?")
+        .get(userId);
+      return row?.device_id ?? null;
+    },
+
+    recordCryptoDevice(userId, deviceId) {
+      db.query(
+        "INSERT INTO crypto_devices (user_id, device_id, created_at) VALUES (?, ?, ?) ON CONFLICT (user_id) DO NOTHING",
+      ).run(userId, deviceId, stamp());
+      return (
+        db
+          .query<
+            { device_id: string },
+            [string]
+          >("SELECT device_id FROM crypto_devices WHERE user_id = ?")
+          .get(userId)?.device_id ?? deviceId
+      );
+    },
+
+    forgetCryptoDevice(userId) {
+      db.query("DELETE FROM crypto_devices WHERE user_id = ?").run(userId);
+    },
+
+    parkPendingDecrypt(eventId, roomId, event, max) {
+      return db.transaction(() => {
+        const inserted = db
+          .query(
+            "INSERT INTO pending_decrypts (event_id, room_id, event, first_seen_at) VALUES (?, ?, ?, ?) ON CONFLICT (event_id) DO NOTHING",
+          )
+          .run(eventId, roomId, JSON.stringify(event), stamp()).changes;
+        if (inserted !== 1) return false;
+        db.query(
+          `DELETE FROM pending_decrypts WHERE event_id IN (
+             SELECT event_id FROM pending_decrypts
+             ORDER BY first_seen_at DESC, event_id DESC LIMIT -1 OFFSET ?
+           )`,
+        ).run(max);
+        return true;
+      })();
+    },
+
+    pendingDecrypts() {
+      return db
+        .query<
+          {
+            event_id: string;
+            room_id: string;
+            event: string;
+            first_seen_at: string;
+          },
+          []
+        >("SELECT * FROM pending_decrypts ORDER BY first_seen_at, event_id")
+        .all()
+        .map((row) => ({
+          eventId: row.event_id,
+          roomId: row.room_id,
+          event: JSON.parse(row.event) as Record<string, unknown>,
+          firstSeenAt: row.first_seen_at,
+        }));
+    },
+
+    claimPendingDecrypt(eventId) {
+      return (
+        db.query("DELETE FROM pending_decrypts WHERE event_id = ?").run(eventId)
+          .changes === 1
+      );
+    },
+
     close: () => db.close(),
   };
 }
@@ -537,6 +673,7 @@ interface BoardRoomRow {
   board_id: string;
   room_id: string;
   alias: string;
+  encrypted: number;
   created_at: string;
 }
 
@@ -593,6 +730,7 @@ const toBoardRoom = (row: BoardRoomRow): BoardRoom => ({
   boardId: row.board_id,
   roomId: row.room_id,
   alias: row.alias,
+  encrypted: row.encrypted === 1,
   createdAt: row.created_at,
 });
 
