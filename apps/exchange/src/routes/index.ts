@@ -16,7 +16,7 @@ import {
 } from "../appservice/index.ts";
 import type { ApprovalRequestAllowed } from "../board-chat/index.ts";
 import type { Config } from "../config.ts";
-import type { Store } from "../store/index.ts";
+import type { Store, WaitKey } from "../store/index.ts";
 import { BOARDS_PATH, createBoardsHandler } from "./boards.ts";
 import { RELAY_EVENTS_PATH, createRelayHandler } from "./relay.ts";
 
@@ -35,6 +35,10 @@ export interface HandlerDeps {
   onGateAccepted?: (gateId: string) => void;
   /** Told of each question the relay accepted. */
   onQuestionAccepted?: (elicitationId: string) => void;
+  /** Told of each follow-up the relay accepted. */
+  onFollowupAccepted?: (gateId: string) => void;
+  /** Told of each waiting card the relay accepted. */
+  onAttentionAccepted?: (key: WaitKey) => void;
   /** May an approval request on this board be kept? Absent: never. */
   approvalRequestAllowed?: ApprovalRequestAllowed;
   log?: (line: string) => void;
@@ -58,6 +62,12 @@ export function createHandler(deps: HandlerDeps) {
     ...(deps.onGateAccepted ? { onGateAccepted: deps.onGateAccepted } : {}),
     ...(deps.onQuestionAccepted
       ? { onQuestionAccepted: deps.onQuestionAccepted }
+      : {}),
+    ...(deps.onFollowupAccepted
+      ? { onFollowupAccepted: deps.onFollowupAccepted }
+      : {}),
+    ...(deps.onAttentionAccepted
+      ? { onAttentionAccepted: deps.onAttentionAccepted }
       : {}),
     ...(deps.approvalRequestAllowed
       ? { approvalRequestAllowed: deps.approvalRequestAllowed }

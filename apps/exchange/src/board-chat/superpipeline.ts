@@ -1,7 +1,8 @@
 /**
- * SuperPipeline, as board chat needs it: resolving a gate and answering a question as the person
- * who answered, and reading a board's gates and questions with this service's own token for the
- * sweeps.
+ * SuperPipeline, as board chat needs it: resolving a gate, answering a question, recording a
+ * follow-up's live link (or switching it to automatic delivery) and resuming or archiving a waiting
+ * card, each as the person who answered; and reading a board's gates, questions, follow-ups and
+ * waiting cards with this service's own token for the sweeps.
  *
  * Resolving **as the person who answered**, with an assertion minted for that answer, is ported
  * from the AgentPod hub's `services/board-chat/gate-resolve.ts` (`resolveGateAtSuperpipeline`):
@@ -20,8 +21,11 @@
  * board's pending gates, each a `gate.pending` body) and `GET /v1/boards/:boardId/gates/:gateId`
  * (one gate, and how it was decided); and, on `approval-requests:relay`,
  * `GET /v1/boards/:boardId/elicitations/pending` (the board's pending questions, broker approval
- * requests included, each an `elicitation.pending` body). Only reads: deciding stays with the
- * person. A refusal
+ * requests included, each an `elicitation.pending` body). `GET /v1/boards/:boardId/deliveries/pending`
+ * (`delivery.pending` bodies) and `GET /v1/boards/:boardId/attention/pending` (`attention.pending`
+ * bodies) are read the same way; SuperPipeline does not yet admit a service token on either (they
+ * are agent-or-person routes there), so until it does they are refused and the sweeps that read
+ * them settle nothing. Only reads: deciding stays with the person. A refusal
  * throws `SuperpipelineError`, because "nothing pending" and "this token is refused" must never
  * read alike; a 401 also drops the held token, so the next read asks the plane for a new one.
  */
@@ -102,6 +106,85 @@ export async function answerQuestionAtSuperpipeline(
       ...(input.option !== undefined ? { option: input.option } : {}),
       ...(input.text !== undefined ? { text: input.text } : {}),
       ...(input.subject !== undefined ? { subject: input.subject } : {}),
+    },
+    deps,
+  );
+}
+
+export interface FollowupAnswerInput {
+  boardId: string;
+  gateId: string;
+  /** The live link the person recorded, or a switch to automatic delivery. */
+  change: { liveUrl: string } | { mode: "automatic" };
+  principalId: string;
+  senderMxid: string;
+}
+
+/**
+ * Record a manual delivery's live link, or switch it to automatic delivery, as the person who
+ * answered the follow-up (the hub's `updateDeliveryAtSuperpipeline`):
+ * `POST /v1/boards/:boardId/gates/:gateId/delivery` with the person's assertion and `{ liveUrl }` or
+ * `{ mode: "automatic" }`. The board checks who decided the gate, so this is never this service.
+ */
+export async function answerFollowupAtSuperpipeline(
+  input: FollowupAnswerInput,
+  deps: ResolveDeps,
+): Promise<ResolveResult> {
+  return postAsPerson(
+    input,
+    `/v1/boards/${encodeURIComponent(input.boardId)}/gates/${encodeURIComponent(input.gateId)}/delivery`,
+    "liveUrl" in input.change
+      ? { liveUrl: input.change.liveUrl }
+      : { mode: "automatic" },
+    deps,
+  );
+}
+
+/** What an answer to a waiting card asks the board for. */
+export type AttentionAction =
+  | { kind: "resume"; toStageKey: string | null; comment: string }
+  | { kind: "archive"; comment: string | null };
+
+export interface AttentionAnswerInput {
+  boardId: string;
+  cardId: string;
+  waitId: string;
+  action: AttentionAction;
+  principalId: string;
+  senderMxid: string;
+}
+
+/**
+ * Resume a waiting card (here, or at an earlier stage), or archive it, as the person who answered
+ * (the hub's `answerAttentionAtSuperpipeline`): `POST /v1/boards/:boardId/cards/:cardId/resume`
+ * with `{ comment, toStageKey?, expectedWaitId }`, or `…/archive` with `{ expectedWaitId, comment? }`.
+ * The wait goes as `expectedWaitId`, so a late answer never acts on another wait: the board refuses
+ * a stale one `WAIT_CHANGED` and changes nothing.
+ */
+export async function answerAttentionAtSuperpipeline(
+  input: AttentionAnswerInput,
+  deps: ResolveDeps,
+): Promise<ResolveResult> {
+  const card = `/v1/boards/${encodeURIComponent(input.boardId)}/cards/${encodeURIComponent(input.cardId)}`;
+  const a = input.action;
+  if (a.kind === "resume") {
+    return postAsPerson(
+      input,
+      `${card}/resume`,
+      {
+        comment: a.comment,
+        ...(a.toStageKey !== null ? { toStageKey: a.toStageKey } : {}),
+        expectedWaitId: input.waitId,
+      },
+      deps,
+    );
+  }
+  return postAsPerson(
+    input,
+    `${card}/archive`,
+    {
+      expectedWaitId: input.waitId,
+      ...(a.comment !== null ? { comment: a.comment } : {}),
     },
     deps,
   );
@@ -209,6 +292,10 @@ export interface SuperpipelineReads {
    * with treaty's `isElicitationPending`. Needs `approval-requests:relay`.
    */
   pendingQuestions(boardId: string): Promise<unknown[]>;
+  /** The follow-ups the board is still owed, unchecked: each is read with `isDeliveryPending`. */
+  pendingFollowups(boardId: string): Promise<unknown[]>;
+  /** The cards waiting on a person, unchecked: each is read with `isAttentionPending`. */
+  pendingAttention(boardId: string): Promise<unknown[]>;
 }
 
 export interface ReadsDeps {
@@ -270,6 +357,24 @@ export function createSuperpipelineReads(deps: ReadsDeps): SuperpipelineReads {
       if (!Array.isArray(questions))
         throw new SuperpipelineError(200, "malformed_response");
       return questions as unknown[];
+    },
+
+    async pendingFollowups(boardId) {
+      const body = await read(`/v1/boards/${enc(boardId)}/deliveries/pending`);
+      const followups = field(body, "deliveries");
+      // Absence from this list settles a follow-up: a body without one is never read as empty.
+      if (!Array.isArray(followups))
+        throw new SuperpipelineError(200, "malformed_response");
+      return followups as unknown[];
+    },
+
+    async pendingAttention(boardId) {
+      const body = await read(`/v1/boards/${enc(boardId)}/attention/pending`);
+      const waiting = field(body, "attention");
+      // Absence from this list closes a waiting card: a body without one is never read as empty.
+      if (!Array.isArray(waiting))
+        throw new SuperpipelineError(200, "malformed_response");
+      return waiting as unknown[];
     },
 
     async gate(boardId, gateId) {

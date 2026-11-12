@@ -33,10 +33,11 @@
  * the same gate; a settled gate is never posted. A gate held for a join is logged once.
  *
  * The way in: an encrypted event in a board room, from a person, is decrypted before anything
- * reads it (the hub's `asPlaintext`), then read like any other: a gate answer, a question answer
- * or a typed reply to a question is carried (questions: `question-card.ts`, `question-answer.ts`,
- * sharing this queue). One
- * whose key has not arrived yet waits, still encrypted, in the store (`pending_decrypts`; the
+ * reads it (the hub's `asPlaintext`), then read like any other: a gate answer, a question answer,
+ * a follow-up's or a waiting card's answer, or a typed reply to a question is carried
+ * (questions: `question-card.ts`, `question-answer.ts`; follow-ups: `followup-card.ts`,
+ * `followup-answer.ts`; waiting cards: `attention-card.ts`, `attention-answer.ts`; all sharing
+ * this queue). One whose key has not arrived yet waits, still encrypted, in the store (`pending_decrypts`; the
  * hub's `pending-decrypts.ts`): the homeserver has been told the transaction was applied and
  * never sends it again, so an event held in memory would be lost by any restart. It is tried
  * again after every transaction that brought keys and at boot, given up after
@@ -62,7 +63,27 @@ import {
   type MatrixEvent,
   type RoomCrypto,
 } from "../appservice/index.ts";
-import type { BoardRoom, GateOffer, Store } from "../store/index.ts";
+import type { BoardRoom, GateOffer, Store, WaitKey } from "../store/index.ts";
+import type {
+  AttentionAnswerOutcome,
+  AttentionAnswers,
+} from "./attention-answer.ts";
+import {
+  postAttention,
+  settleAttention,
+  type AttentionPostOutcome,
+  type AttentionSettleOutcome,
+} from "./attention-card.ts";
+import type {
+  FollowupAnswerOutcome,
+  FollowupAnswers,
+} from "./followup-answer.ts";
+import {
+  postFollowup,
+  settleFollowup,
+  type FollowupPostOutcome,
+  type FollowupSettleOutcome,
+} from "./followup-card.ts";
 import type { AnswerOutcome, GateAnswers } from "./gate-answer.ts";
 import type {
   QuestionAnswerOutcome,
@@ -175,6 +196,20 @@ export interface BoardChatDeps {
     | "unpostedQuestions"
     | "settleQuestionDelivery"
     | "settleQuestionEvent"
+    | "followupDelivery"
+    | "followupEvent"
+    | "claimFollowupEvent"
+    | "recordFollowupPosted"
+    | "unpostedFollowups"
+    | "settleFollowupDelivery"
+    | "settleFollowupEvent"
+    | "attentionDelivery"
+    | "attentionEvent"
+    | "claimAttentionEvent"
+    | "recordAttentionPosted"
+    | "unpostedAttention"
+    | "settleAttentionDelivery"
+    | "settleAttentionEvent"
   >;
   /** Speaks in board rooms, encrypted where the room is (`room-sender.ts`). */
   sender: RoomSender;
@@ -185,6 +220,10 @@ export interface BoardChatDeps {
   answers?: GateAnswers;
   /** People's answers to the questions posted here (`question-answer.ts`); absent, none is read. */
   questions?: QuestionAnswers;
+  /** People's answers to the follow-ups posted here (`followup-answer.ts`); absent, none is read. */
+  followups?: FollowupAnswers;
+  /** People's answers to the waiting cards posted here (`attention-answer.ts`); absent, none is read. */
+  attention?: AttentionAnswers;
   log: (line: string) => void;
   now?: () => Date;
 }
@@ -222,6 +261,22 @@ export interface BoardChat {
   settleQuestion(elicitationId: string): Promise<QuestionSettleOutcome>;
   /** Carry one question answer (question.answer.v2 or a typed reply), queued. */
   answerQuestion(event: MatrixEvent): Promise<QuestionAnswerOutcome | null>;
+  /** Post one follow-up, queued behind every post and answer before it. */
+  postFollowup(gateId: string): Promise<FollowupPostOutcome>;
+  /** A follow-up the relay accepted: queue its post and return at once. */
+  followupAccepted(gateId: string): void;
+  /** Settle a follow-up the board no longer owes, queued like a gate's settle. */
+  settleFollowup(gateId: string): Promise<FollowupSettleOutcome>;
+  /** Carry one delivery.answer.v2, queued. */
+  answerFollowup(event: MatrixEvent): Promise<FollowupAnswerOutcome | null>;
+  /** Post one waiting card, queued behind every post and answer before it. */
+  postAttention(key: WaitKey): Promise<AttentionPostOutcome>;
+  /** A waiting card the relay accepted: queue its post and return at once. */
+  attentionAccepted(key: WaitKey): void;
+  /** Close a waiting card whose wait ended elsewhere, queued like a gate's settle. */
+  settleAttention(key: WaitKey): Promise<AttentionSettleOutcome>;
+  /** Carry one attention.answer.v2, queued. */
+  answerAttention(event: MatrixEvent): Promise<AttentionAnswerOutcome | null>;
   /** Settles when every queued post has run. */
   idle(): Promise<void>;
 }
@@ -415,15 +470,59 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
       return null;
     });
 
+  /** A single-event card's post: logged once when held, like a question. */
+  const cardDeps = {
+    store,
+    sender,
+    rooms,
+    refuse: refusalFor,
+    held(key: string, at: string, boardId: string) {
+      if (heldLogged.has(key)) return;
+      heldLogged.add(key);
+      log(`board-chat: ${at} held until a person joins the room of ${boardId}`);
+    },
+    log,
+  };
+  const postF = (gateId: string) =>
+    enqueue(() => postFollowup(cardDeps, gateId));
+  const postA = (key: WaitKey) => enqueue(() => postAttention(cardDeps, key));
+  const settleDeps = { store, sender, speaker: rooms.speaker, log };
+  /** An answer to a single-event card, carried in the posts' queue. */
+  function carry<T>(
+    what: string,
+    handler: { handle(event: MatrixEvent): Promise<T> } | undefined,
+    event: MatrixEvent,
+  ): Promise<T | null> {
+    return enqueue(async () => (handler ? handler.handle(event) : null)).catch(
+      (error: unknown) => {
+        log(
+          `board-chat: ${what} answer could not be carried (${describe(error)})`,
+        );
+        return null;
+      },
+    );
+  }
+  const followups = deps.followups;
+  const attention = deps.attention;
+  const answerF = (event: MatrixEvent) =>
+    carry("a follow-up's", followups, event);
+  const answerA = (event: MatrixEvent) =>
+    carry("a waiting card's", attention, event);
+
   const postAll = (boardId?: string) => {
     for (const gate of store.unpostedGates(boardId)) void post(gate.gateId);
     for (const q of store.unpostedQuestions(boardId))
       void postQ(q.elicitationId);
+    for (const f of store.unpostedFollowups(boardId)) void postF(f.gateId);
+    for (const a of store.unpostedAttention(boardId))
+      void postA({ boardId: a.boardId, cardId: a.cardId, waitId: a.waitId });
   };
 
   /**
    * What a person's message is read as, before anything else reads it: a gate answer, a
-   * question.answer.v2, or a typed reply to the question open in its room. True when it was one.
+   * question.answer.v2, a delivery.answer.v2, an attention.answer.v2, or a typed reply to the
+   * question open in its room. True when it was one. The envelope's answers come before a typed
+   * reply: one is never read as a number for the question open in the room.
    */
   function routeAnswer(event: MatrixEvent): boolean {
     if (answers?.isAnswer(event)) {
@@ -432,6 +531,14 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     }
     if (questions?.isAnswer(event)) {
       void answerQuestion(event);
+      return true;
+    }
+    if (followups?.isAnswer(event)) {
+      void answerF(event);
+      return true;
+    }
+    if (attention?.isAnswer(event)) {
+      void answerA(event);
       return true;
     }
     if (questions?.isTypedReply(event)) {
@@ -549,6 +656,15 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
         ),
       ),
     answerQuestion: (event) => answerQuestion(event),
+    postFollowup: postF,
+    followupAccepted: (gateId) => void postF(gateId),
+    settleFollowup: (gateId) =>
+      enqueue(() => settleFollowup(settleDeps, gateId)),
+    answerFollowup: answerF,
+    postAttention: postA,
+    attentionAccepted: (key) => void postA(key),
+    settleAttention: (key) => enqueue(() => settleAttention(settleDeps, key)),
+    answerAttention: answerA,
     retryPending,
     resume: () => {
       answers?.resume();
