@@ -39,6 +39,13 @@ export const REQUIRED = [
 /** Where the store keeps its database when `SUPEREXCHANGE_DATA_DIR` is unset. */
 export const DEFAULT_DATA_DIR = "/data";
 
+/** How often the gate sweep asks each board, in seconds, when `SUPEREXCHANGE_SWEEP_SECONDS` is unset. */
+export const DEFAULT_SWEEP_SECONDS = 60;
+/** The shortest sweep interval accepted: every board is asked once per pass. */
+export const MIN_SWEEP_SECONDS = 15;
+/** The longest: a day. */
+export const MAX_SWEEP_SECONDS = 86_400;
+
 export interface Config {
   port: number;
   homeserverUrl: string;
@@ -68,6 +75,8 @@ export interface Config {
   orgPlaneCredential: ServiceCredential;
   /** SuperPipeline's API URL, and the audience of every assertion asked for it. */
   superpipelineUrl: string;
+  /** How often the gate sweep asks each enabled board, in seconds (`SUPEREXCHANGE_SWEEP_SECONDS`). */
+  sweepSeconds: number;
 }
 
 /** A service principal's credential: its id and its secret. */
@@ -200,6 +209,21 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     }
   }
 
+  let sweepSeconds = DEFAULT_SWEEP_SECONDS;
+  const rawSweep = env.SUPEREXCHANGE_SWEEP_SECONDS?.trim();
+  if (rawSweep) {
+    sweepSeconds = /^\d+$/.test(rawSweep) ? Number(rawSweep) : NaN;
+    if (
+      !Number.isInteger(sweepSeconds) ||
+      sweepSeconds < MIN_SWEEP_SECONDS ||
+      sweepSeconds > MAX_SWEEP_SECONDS
+    ) {
+      problems.push(
+        `SUPEREXCHANGE_SWEEP_SECONDS is not a whole number of seconds from ${MIN_SWEEP_SECONDS} to ${MAX_SWEEP_SECONDS}`,
+      );
+    }
+  }
+
   if (problems.length > 0) throw new ConfigError(problems);
   return {
     port,
@@ -218,6 +242,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
       secret: credential?.[2] ?? "",
     },
     superpipelineUrl,
+    sweepSeconds,
   };
 }
 
