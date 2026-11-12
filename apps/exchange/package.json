@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "@superjackfruitlabs/treaty-cloudevents": "0.0.6",
-    "@superjackfruitlabs/treaty-matrix-events": "0.0.9"
+    "@superjackfruitlabs/treaty-matrix-events": "0.0.10"
   }
 }
