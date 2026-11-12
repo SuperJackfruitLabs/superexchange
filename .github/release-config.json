@@ -1,0 +1,10 @@
+{
+  "product": "SuperExchange",
+  "ci": {
+    "forge": "https://forge.superjackfruit.com",
+    "repo": "SuperJackfruitLabs/superexchange",
+    "context": "ci / check (push)",
+    "check_command": "bun install --frozen-lockfile && bun run check"
+  },
+  "deploy": { "ssh_command": "superexchange" }
+}

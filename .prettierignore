@@ -1,3 +1,5 @@
 .github/claude/
 .forgejo/workflows/claude-review.yml
 bun.lock
+.github/release/
+.github/workflows/release.yml
