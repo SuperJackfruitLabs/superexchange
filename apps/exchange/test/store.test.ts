@@ -460,3 +460,94 @@ describe("migration 5: gates settled by the sweep", () => {
     expect(store.postedGatesAwaitingOutcome("brd_a")).toEqual([]);
   });
 });
+
+describe("migration 6: board questions", () => {
+  const offer = {
+    options: [{ id: "a", label: "A" }],
+    optionsV2: [
+      { id: "a", label: "A", meaning: "choose", needs_comment: false },
+    ],
+    freeTextMaxLength: null,
+    subject: {
+      id: "s1",
+      digest: "d1",
+      previewComplete: false,
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    },
+    approvalRequest: true,
+  };
+
+  test("a question is delivered once, claimed once with its offer, and unposted until posted", () => {
+    const { store } = fresh();
+    expect(store.recordQuestionDelivery("q1", "brd_a", { x: 1 })).toBe(true);
+    expect(store.recordQuestionDelivery("q1", "brd_a", { x: 2 })).toBe(false);
+    expect(store.questionDelivery("q1")).toEqual({
+      boardId: "brd_a",
+      body: { x: 1 },
+      settledAt: null,
+    });
+    expect(store.claimQuestionEvent("q1", "brd_a", "!r:x", offer)).toBe(true);
+    expect(
+      store.claimQuestionEvent("q1", "brd_a", "!other:x", {
+        ...offer,
+        approvalRequest: false,
+      }),
+    ).toBe(false);
+    expect(store.questionEvent("q1")).toMatchObject({
+      roomId: "!r:x",
+      eventId: null,
+      postedAt: null,
+      offer,
+    });
+    expect(
+      store.unpostedQuestions("brd_a").map((q) => q.elicitationId),
+    ).toEqual(["q1"]);
+    store.recordQuestionPosted("q1", "$e1");
+    expect(store.unpostedQuestions()).toEqual([]);
+    expect(store.openQuestionsInRoom("!r:x").map((q) => q.eventId)).toEqual([
+      "$e1",
+    ]);
+  });
+
+  test("a settled delivery is never offered as unposted", () => {
+    const { store } = fresh();
+    store.recordQuestionDelivery("q1", "brd_a", {});
+    expect(store.settleQuestionDelivery("q1")).toBe(true);
+    expect(store.settleQuestionDelivery("q1")).toBe(false);
+    expect(store.unpostedQuestions()).toEqual([]);
+  });
+
+  test("a posted question has one receipt, whether the answer or the sweep claims it", () => {
+    const { store } = fresh();
+    for (const id of ["q1", "q2", "q3"]) {
+      store.claimQuestionEvent(id, "brd_a", "!r:x", offer);
+    }
+    store.recordQuestionPosted("q1", "$e1");
+    store.recordQuestionPosted("q2", "$e2");
+    // Not posted: nothing to claim.
+    expect(store.claimQuestionReceipt("q3")).toBe(false);
+    expect(store.settleQuestionEvent("q3")).toBe(false);
+
+    expect(store.claimQuestionReceipt("q1")).toBe(true);
+    expect(store.claimQuestionReceipt("q1")).toBe(false);
+    expect(store.settleQuestionEvent("q1")).toBe(false);
+    expect(store.questionEvent("q1")?.settledAt).toBeNull();
+
+    expect(store.settleQuestionEvent("q2")).toBe(true);
+    expect(store.claimQuestionReceipt("q2")).toBe(false);
+    expect(store.questionEvent("q2")?.settledAt).not.toBeNull();
+    expect(store.postedQuestionsAwaitingOutcome("brd_a")).toEqual([]);
+    expect(store.openQuestionsInRoom("!r:x")).toEqual([]);
+  });
+
+  test("open questions are newest first", () => {
+    const { store } = fresh();
+    for (const id of ["q1", "q2"]) {
+      store.claimQuestionEvent(id, "brd_a", "!r:x", offer);
+      store.recordQuestionPosted(id, `$${id}`);
+    }
+    expect(
+      store.openQuestionsInRoom("!r:x").map((q) => q.elicitationId),
+    ).toEqual(["q2", "q1"]);
+  });
+});
