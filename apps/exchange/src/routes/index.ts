@@ -11,6 +11,7 @@
 import {
   APPSERVICE_PREFIX,
   createAppserviceHandler,
+  type CryptoTransaction,
   type EventsHandler,
 } from "../appservice/index.ts";
 import type { Config } from "../config.ts";
@@ -27,6 +28,8 @@ export interface HandlerDeps {
   >;
   store: Store;
   onEvents: EventsHandler;
+  /** A homeserver transaction's crypto parts, before its events; absent, they are not read. */
+  onCrypto?: (tx: CryptoTransaction) => void | Promise<void>;
   /** Told of each gate the relay accepted. */
   onGateAccepted?: (gateId: string) => void;
   log?: (line: string) => void;
@@ -40,6 +43,7 @@ export function createHandler(deps: HandlerDeps) {
     hsToken: deps.config.hsToken,
     store: deps.store,
     onEvents: deps.onEvents,
+    ...(deps.onCrypto ? { onCrypto: deps.onCrypto } : {}),
     log,
   });
   const relay = createRelayHandler({
