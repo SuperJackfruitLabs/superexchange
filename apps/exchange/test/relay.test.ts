@@ -17,12 +17,14 @@ function setup() {
   const t = tempStore();
   cleanups.push(t.cleanup);
   const { log, lines } = captureLog();
+  const accepted: string[] = [];
   const handle = createRelayHandler({
     secret: RELAY_SECRET,
     store: t.store,
     log,
+    onGateAccepted: (gateId) => accepted.push(gateId),
   });
-  return { handle, store: t.store, lines };
+  return { handle, store: t.store, lines, accepted };
 }
 
 const UTF8 = new TextEncoder();
@@ -101,8 +103,16 @@ describe("relay deliveries", () => {
     expect(store.gateDelivery("gte_1")?.body).toEqual(gateBody());
   });
 
+  test("an accepted gate, and its redelivery, are handed on to be posted", async () => {
+    const { handle, store, accepted } = setup();
+    optIn(store);
+    await handle(await delivery(gateBody()));
+    await handle(await delivery(gateBody(), { id: "evt-2" }));
+    expect(accepted).toEqual(["gte_1", "gte_1"]);
+  });
+
   test("a gate for a board not opted in, or disabled, is ignored and not recorded", async () => {
-    const { handle, store } = setup();
+    const { handle, store, accepted } = setup();
     const unknown = await handle(await delivery(gateBody()));
     expect(unknown.status).toBe(200);
     expect(await unknown.json()).toEqual({ status: "ignored" });
@@ -113,6 +123,7 @@ describe("relay deliveries", () => {
     expect(disabled.status).toBe(200);
     expect(await disabled.json()).toEqual({ status: "ignored" });
     expect(store.gateDelivery("gte_1")).toBeNull();
+    expect(accepted).toEqual([]);
   });
 
   test("another event type is ignored, even for an opted-in board", async () => {

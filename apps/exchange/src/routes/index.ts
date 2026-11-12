@@ -27,6 +27,8 @@ export interface HandlerDeps {
   >;
   store: Store;
   onEvents: EventsHandler;
+  /** Told of each gate the relay accepted. */
+  onGateAccepted?: (gateId: string) => void;
   log?: (line: string) => void;
   /** Test seam for the relay signature's clock. */
   nowMs?: () => number;
@@ -44,6 +46,7 @@ export function createHandler(deps: HandlerDeps) {
     secret: deps.config.relayDeliverySecret,
     store: deps.store,
     log,
+    ...(deps.onGateAccepted ? { onGateAccepted: deps.onGateAccepted } : {}),
     ...(deps.nowMs ? { nowMs: deps.nowMs } : {}),
   });
   const boards = createBoardsHandler({

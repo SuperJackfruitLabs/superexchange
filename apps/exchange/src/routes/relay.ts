@@ -11,7 +11,8 @@
  * - any type but `gate.pending` v1: 200 `{status:"ignored"}`, so the relay does not retry what
  *   this build will never handle;
  * - a `gate.pending` whose data is not a gate: 400;
- * - a gate for an opted-in, enabled board: recorded once, 200 `{status:"accepted"}`;
+ * - a gate for an opted-in, enabled board: recorded once, 200 `{status:"accepted"}`, and handed
+ *   to board chat to post (a redelivery too: a gate not yet posted is tried again);
  * - a gate for any other board: 200 `{status:"ignored"}`.
  */
 import {
@@ -33,6 +34,8 @@ export interface RelayDeps {
   secret: string;
   store: Pick<Store, "getBoard" | "recordGateDelivery">;
   log?: (line: string) => void;
+  /** Told of each accepted gate (new or redelivered), to post it. Must not throw or wait. */
+  onGateAccepted?: (gateId: string) => void;
   /** Test seam for the signature's clock. */
   nowMs?: () => number;
 }
@@ -89,6 +92,7 @@ export function createRelayHandler(deps: RelayDeps) {
     log(
       `relay: gate ${JSON.stringify(intake.gateId)} for ${intake.boardId} ${intake.duplicate ? "already recorded" : "recorded"}`,
     );
+    deps.onGateAccepted?.(intake.gateId);
     return Response.json({ status: "accepted" });
   };
 }
