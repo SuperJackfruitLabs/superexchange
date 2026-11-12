@@ -7,34 +7,63 @@ name: Release
 on:
   push:
     tags: ['v*']
+  # Re-runs the release of an existing tag (a draft is finished, a published release is never
+  # rebuilt), or with summary_only rewrites only the Summary section of its published notes.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing vX.Y.Z tag on main
+        required: true
+        type: string
+      summary_only:
+        description: Only (re)write the Summary section of that tag's existing release notes
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release
+  # One release at a time. Summary-only runs queue per tag, so a batch of them is never cancelled.
+  group: ${{ inputs.summary_only && format('release-summary-{0}', inputs.tag) || 'release' }}
   cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   gate:
     name: Tag gate
     # A forge-primary product's GitHub mirror runs this; the forge itself never does.
-    if: github.server_url == 'https://github.com'
+    if: github.server_url == 'https://github.com' && !inputs.summary_only
     runs-on: ubuntu-latest
     permissions:
       contents: read
       actions: read
     outputs:
+      sha: ${{ steps.commit.outputs.sha }}
       run_id: ${{ steps.ci.outputs.run_id }}
+      run_attempt: ${{ steps.ci.outputs.run_attempt }}
       ci_source: ${{ steps.ci.outputs.source }}
       product: ${{ steps.config.outputs.product }}
       publish: ${{ steps.config.outputs.publish }}
+      publish_after_release: ${{ steps.config.outputs.publish_after_release }}
       publish_environment: ${{ steps.config.outputs.publish_environment }}
+      go_mod: ${{ steps.config.outputs.go_mod }}
     steps:
+      - name: Tag is vX.Y.Z
+        run: |
+          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' ||
+            { echo "::error::tag $TAG is not vX.Y.Z"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: refs/tags/${{ env.TAG }}
           fetch-depth: 0
           persist-credentials: false
+      - name: The tag's commit
+        id: commit
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - name: Read release config
         id: config
         run: |
@@ -48,63 +77,93 @@ jobs:
           if jq -e '.publish and ((.publish.script and .publish.environment) | not)' "$c" >/dev/null; then
             echo "::error::publish needs script and environment"; exit 1
           fi
+          if jq -e '.secrets and ((.secrets | type) != "array" or any(.secrets[]; type != "string"))' "$c" >/dev/null; then
+            echo "::error::secrets is a list of secret names"; exit 1
+          fi
+          go=$(jq -r '.go_mod // empty' "$c")
+          if [ -n "$go" ]; then [ -f "$go" ] || { echo "::error::go_mod $go does not exist"; exit 1; }
+          elif [ -f go.mod ]; then go=go.mod; fi
           {
             echo "product=$(jq -r .product "$c")"
             echo "publish=$(jq -r 'if .publish then "true" else "false" end' "$c")"
+            echo "publish_after_release=$(jq -r '.publish.after_release // false' "$c")"
             echo "publish_environment=$(jq -r '.publish.environment // empty' "$c")"
+            echo "check=$(jq -r 'if .check then "true" else "false" end' "$c")"
+            echo "go_mod=$go"
           } >> "$GITHUB_OUTPUT"
-      - name: Tag is vX.Y.Z
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' ||
-            { echo "::error::tag $TAG is not vX.Y.Z"; exit 1; }
       # fetch-depth 0 already brought origin/main. A second fetch would need credentials, which
       # checkout does not keep, and a private repository refuses it.
       - name: Tag commit is on main
+        env:
+          SHA: ${{ steps.commit.outputs.sha }}
         run: |
-          git merge-base --is-ancestor "$GITHUB_SHA" origin/main ||
-            { echo "::error::$GITHUB_SHA is not on main"; exit 1; }
+          git merge-base --is-ancestor "$SHA" origin/main ||
+            { echo "::error::$SHA is not on main"; exit 1; }
+      - name: Not already published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          draft=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json isDraft -q .isDraft 2>/dev/null || echo missing)
+          if [ "$draft" = false ]; then
+            echo "::error::$TAG is already published, and a published release is never rebuilt. Release a new tag, or dispatch with summary_only to refresh its summary."
+            exit 1
+          fi
+          [ "$draft" = true ] && echo "finishing the draft an earlier run left"
+          exit 0
       - name: Main CI passed for this commit
         id: ci
         env:
           GH_TOKEN: ${{ github.token }}
           FORGE_STATUS_TOKEN: ${{ secrets.FORGE_STATUS_TOKEN }}
+          SHA: ${{ steps.commit.outputs.sha }}
         run: |
           wf=$(jq -r '.ci_workflow // empty' .github/release-config.json)
           if [ -z "$wf" ]; then
-            sh .github/release/ci-gate.sh .github/release-config.json "$GITHUB_SHA"
+            sh .github/release/ci-gate.sh .github/release-config.json "$SHA"
             exit 0
           fi
           echo "source=github" >> "$GITHUB_OUTPUT"
-          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/runs?head_sha=$GITHUB_SHA&branch=main&status=success&per_page=1" \
-            -q '.workflow_runs[0].id // empty')
-          [ -n "$run" ] || { echo "::error::no successful $wf run on main for $GITHUB_SHA"; exit 1; }
-          echo "run_id=$run" >> "$GITHUB_OUTPUT"
-          echo "main CI run $run passed for $GITHUB_SHA"
-      - name: Set up Bun for the check at the tag
-        if: steps.ci.outputs.source == 'tag' && hashFiles('.bun-version') != ''
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/runs?head_sha=$SHA&branch=main&status=success&per_page=1" \
+            -q '.workflow_runs[0] | select(. != null) | "\(.id) \(.run_attempt)"')
+          [ -n "$run" ] || { echo "::error::no successful $wf run on main for $SHA"; exit 1; }
+          echo "run_id=${run% *}" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=${run#* }" >> "$GITHUB_OUTPUT"
+          echo "main CI run ${run% *} (attempt ${run#* }) passed for $SHA"
+      - name: Set up Bun for the checks at the tag
+        if: (steps.ci.outputs.source == 'tag' || steps.config.outputs.check == 'true') && hashFiles('.bun-version') != ''
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
+      - name: Set up Go for the checks at the tag
+        if: (steps.ci.outputs.source == 'tag' || steps.config.outputs.check == 'true') && steps.config.outputs.go_mod != ''
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ steps.config.outputs.go_mod }}
+          cache: false
       - name: Check at the tag (main's CI result could not be read)
         if: steps.ci.outputs.source == 'tag'
         run: sh -c "$(jq -r '.ci.check_command' .github/release-config.json)"
+      - name: The product's own release check
+        if: steps.config.outputs.check == 'true'
+        env:
+          RELEASE_SHA: ${{ steps.commit.outputs.sha }}
+        run: sh -c "$(jq -r '.check' .github/release-config.json)"
 
   publish:
-    name: Publish ${{ needs.gate.outputs.product }} ${{ github.ref_name }}
+    name: Publish ${{ needs.gate.outputs.product }} ${{ inputs.tag || github.ref_name }}
     needs: gate
-    if: needs.gate.outputs.publish == 'true'
+    if: needs.gate.outputs.publish == 'true' && needs.gate.outputs.publish_after_release != 'true'
     runs-on: ubuntu-latest
     environment: ${{ needs.gate.outputs.publish_environment }}
     permissions:
       contents: read
       id-token: write
     env:
-      TAG: ${{ github.ref_name }}
+      RELEASE_SHA: ${{ needs.gate.outputs.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.gate.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -115,13 +174,23 @@ jobs:
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
+      - name: Set up Go
+        if: needs.gate.outputs.go_mod != ''
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ needs.gate.outputs.go_mod }}
+          cache: false
+      - name: Named secrets
+        env:
+          KIT_SECRETS: ${{ toJSON(secrets) }}
+        run: sh .github/release/kit.sh secrets .github/release-config.json
       - name: Publish
         run: sh "$(jq -r '.publish.script' .github/release-config.json)"
 
   release:
-    name: Release ${{ needs.gate.outputs.product }} ${{ github.ref_name }}
+    name: Release ${{ needs.gate.outputs.product }} ${{ inputs.tag || github.ref_name }}
     needs: [gate, publish]
-    # Runs after a successful publish, or when the product publishes nothing.
+    # Runs after a successful publish, or when the product publishes nothing before the release.
     if: >-
       !cancelled() && needs.gate.result == 'success' &&
       (needs.publish.result == 'success' || needs.publish.result == 'skipped')
@@ -133,25 +202,33 @@ jobs:
       id-token: write
       attestations: write
     env:
-      TAG: ${{ github.ref_name }}
       CONFIG: .github/release-config.json
+      RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+      CI_RUN_ID: ${{ needs.gate.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ needs.gate.outputs.sha }}
           fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
 
+      # `artifact` names main CI's build: {sha} is the commit, {attempt} the run attempt that
+      # passed. A name with * fetches every matching artifact (a CI matrix), merged.
       - name: Which build to ship
         id: plan
+        env:
+          ATTEMPT: ${{ needs.gate.outputs.run_attempt }}
         run: |
-          artifact=$(jq -r '.artifact // empty' "$CONFIG" | sed "s/{sha}/$GITHUB_SHA/g")
+          artifact=$(jq -r '.artifact // empty' "$CONFIG" | sed "s/{sha}/$RELEASE_SHA/g; s/{attempt}/$ATTEMPT/g")
           build=$(jq -r '.build_at_tag // false' "$CONFIG")
-          if [ -n "$artifact" ]; then echo "mode=artifact" >> "$GITHUB_OUTPUT"
-          elif [ "$build" = true ]; then echo "mode=build" >> "$GITHUB_OUTPUT"
-          else echo "mode=none" >> "$GITHUB_OUTPUT"; fi
+          case "$artifact" in
+            '') if [ "$build" = true ]; then echo "mode=build"; else echo "mode=none"; fi ;;
+            *'*'*) echo "mode=pattern" ;;
+            *) echo "mode=artifact" ;;
+          esac >> "$GITHUB_OUTPUT"
           echo "artifact=$artifact" >> "$GITHUB_OUTPUT"
       - name: Fetch the build main's CI tested
         if: steps.plan.outputs.mode == 'artifact'
@@ -161,52 +238,50 @@ jobs:
           path: release-dist
           run-id: ${{ needs.gate.outputs.run_id }}
           github-token: ${{ github.token }}
+      - name: Fetch the builds main's CI tested (every matching artifact)
+        if: steps.plan.outputs.mode == 'pattern'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ${{ steps.plan.outputs.artifact }}
+          merge-multiple: true
+          path: release-dist
+          run-id: ${{ needs.gate.outputs.run_id }}
+          github-token: ${{ github.token }}
       - name: Set up Bun for the build
         if: steps.plan.outputs.mode == 'build' && hashFiles('.bun-version') != ''
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - name: Build at the tag (this product's main CI uploads no build yet)
+      - name: Set up Go for the build
+        if: steps.plan.outputs.mode == 'build' && needs.gate.outputs.go_mod != ''
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ needs.gate.outputs.go_mod }}
+          cache: false
+      - name: Build at the tag (this product's main CI uploads no build it can ship)
         if: steps.plan.outputs.mode == 'build'
         run: |
           mkdir -p release-dist
           sh -c "$(jq -r '.build_command' "$CONFIG")"
-          # Asset entries are globs on purpose.
-          # shellcheck disable=SC2086
-          for p in $(jq -r '.assets[]? // empty' "$CONFIG"); do cp -r $p release-dist/ 2>/dev/null || true; done
+          # Asset entries are globs on purpose. One that matches nothing fails the release.
+          for p in $(jq -r '.assets[]? // empty' "$CONFIG"); do
+            # shellcheck disable=SC2086
+            set -- $p
+            [ -e "$1" ] || { echo "::error::asset $p matched no file"; exit 1; }
+            cp -r "$@" release-dist/
+          done
 
       - name: Checksums
         id: sums
-        run: |
-          mkdir -p release-dist
-          if [ -n "$(ls -A release-dist)" ]; then
-            (cd release-dist && find . -type f | sort | xargs sha256sum > ../SHA256SUMS.tmp)
-            mv SHA256SUMS.tmp release-dist/SHA256SUMS
-            echo "files=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "files=false" >> "$GITHUB_OUTPUT"
-          fi
+        run: sh .github/release/kit.sh checksums release-dist >> "$GITHUB_OUTPUT"
       - name: Provenance
         if: steps.sums.outputs.files == 'true'
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: release-dist/**
 
-      - name: Release notes — changelog section
-        run: |
-          : > changelog-section.md
-          if [ -f CHANGELOG.md ]; then
-            awk -v v="$TAG" '
-              $0 ~ "^## " v "( |$)" { on = 1; next }
-              on && /^## / { exit }
-              on { print }
-            ' CHANGELOG.md > changelog-section.md
-          fi
-          prev=$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$TAG^" 2>/dev/null || true)
-          echo "PREV=$prev" >> "$GITHUB_ENV"
-          range=${prev:+$prev..}$TAG
-          git log --no-merges --format='%s' "$range" > commit-log.txt
-          git diff --stat "${prev:-$(git rev-list --max-parents=0 HEAD | tail -1)}" "$TAG" | tail -40 > diff-stat.txt
+      - name: Release notes — material
+        run: echo "PREV=$(sh .github/release/kit.sh material "$TAG" .)" >> "$GITHUB_ENV"
       # A first release has no previous tag: git-cliff then takes every commit up to HEAD, which
       # is the tag. It cannot read a bare tag as a range.
       - name: Release notes — grouped commits
@@ -240,7 +315,7 @@ jobs:
             if [ -s changelog-section.md ]; then echo "## Highlights"; echo; cat changelog-section.md; echo; fi
             if [ -s grouped.md ]; then echo "## Changes"; echo; cat grouped.md; echo; fi
             echo "---"
-            if [ "$MODE" = build ]; then echo "Built at the tag: this product's main CI does not upload a build yet."; fi
+            if [ "$MODE" = build ]; then echo "Built at the tag: this product's main CI uploads no build it can ship."; fi
             if [ "$CI_SOURCE" = tag ]; then echo "Checked at the tag: main's CI result could not be read."; fi
             if [ -s release-dist/SHA256SUMS ]; then
               echo "Verify downloads with \`sha256sum --check SHA256SUMS\` and \`gh attestation verify <file> -R $GITHUB_REPOSITORY\`."
@@ -249,24 +324,38 @@ jobs:
           } > notes.md
           cat notes.md
 
+      # A re-run finishes the draft an earlier run left; the gate refused a published release.
       - name: Draft the release
         env:
           GH_TOKEN: ${{ github.token }}
           PRODUCT: ${{ needs.gate.outputs.product }}
         run: |
-          gh release create "$TAG" --draft --verify-tag --title "$PRODUCT $TAG" --notes-file notes.md
+          set --
+          case "$TAG" in *-*) set -- --prerelease ;; esac
+          if gh release view "$TAG" --json isDraft -q .isDraft >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$PRODUCT $TAG" --notes-file notes.md "$@"
+          else
+            gh release create "$TAG" --draft --verify-tag --title "$PRODUCT $TAG" --notes-file notes.md "$@"
+          fi
           if [ -n "$(ls -A release-dist 2>/dev/null)" ]; then
             gh release upload "$TAG" release-dist/* --clobber
           fi
 
+      # `secrets` in the config: those secrets, by name, for the deploy, smoke and rollback.
+      - name: Named secrets
+        env:
+          KIT_SECRETS: ${{ toJSON(secrets) }}
+        run: sh .github/release/kit.sh secrets "$CONFIG"
       # `deploy` is a script, or {"ssh_command": "<door>"}: the production host's forced-command
-      # key, run as `ssh <ssh_user>@$PROD_HOST <door> <tag>`. Scripts see the same PROD_* values.
+      # key, run as `ssh <ssh_user>@$PROD_HOST <door> <tag>`. Scripts see the same PROD_* values,
+      # TAG, RELEASE_SHA, CI_RUN_ID (main CI's run, for its other artifacts) and GH_TOKEN.
       - name: Deploy
         id: deploy
         env:
           PROD_HOST: ${{ vars.PROD_HOST }}
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
           PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           kind=$(jq -r '.deploy | type' "$CONFIG")
           if [ "$kind" = null ]; then echo "no deploy step for this product"; exit 0; fi
@@ -306,6 +395,7 @@ jobs:
           PROD_HOST: ${{ vars.PROD_HOST }}
           PROD_SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
           PROD_KNOWN_HOSTS: ${{ secrets.PROD_KNOWN_HOSTS }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           kind=$(jq -r '.rollback | type' "$CONFIG")
           if [ "$kind" = null ]; then echo "::error::the release failed and no rollback is configured"; exit 1; fi
@@ -322,7 +412,109 @@ jobs:
           fi
           echo "::error::rolled back to ${PREV:-the previous release}; the release stays a draft"
 
+      # Latest only when no published release is newer: re-running an older tag must not move
+      # installers that follow releases/latest backwards.
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$TAG" --draft=false --latest
+        run: |
+          case "$TAG" in *-*) gh release edit "$TAG" --draft=false --prerelease --latest=false; exit 0 ;; esac
+          newest=$( { gh release list --exclude-drafts --exclude-pre-releases --limit 200 \
+            --json tagName -q '.[].tagName'; echo "$TAG"; } | grep -E '^v[0-9]' | sort -V | tail -n 1)
+          latest=false
+          [ "$newest" = "$TAG" ] && latest=true
+          gh release edit "$TAG" --draft=false --latest="$latest"
+
+  # publish.after_release: the package goes out after the release is published, from the release's
+  # own files (RELEASE_DIST), so it is exactly what was attested.
+  publish-after-release:
+    name: Publish ${{ needs.gate.outputs.product }} ${{ inputs.tag || github.ref_name }} packages
+    needs: [gate, release]
+    if: >-
+      !cancelled() && needs.release.result == 'success' &&
+      needs.gate.outputs.publish == 'true' && needs.gate.outputs.publish_after_release == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.gate.outputs.publish_environment }}
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_SHA: ${{ needs.gate.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - name: Set up Bun
+        if: hashFiles('.bun-version') != ''
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Set up Go
+        if: needs.gate.outputs.go_mod != ''
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ${{ needs.gate.outputs.go_mod }}
+          cache: false
+      - name: The release's files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -D release-dist
+          (cd release-dist && sha256sum --check SHA256SUMS)
+      - name: Named secrets
+        env:
+          KIT_SECRETS: ${{ toJSON(secrets) }}
+        run: sh .github/release/kit.sh secrets .github/release-config.json
+      - name: Publish
+        run: RELEASE_DIST="$PWD/release-dist" sh "$(jq -r '.publish.script' .github/release-config.json)"
+
+  # workflow_dispatch with summary_only: rewrites the Summary section of an existing release's
+  # notes and changes nothing else.
+  summary:
+    name: Summary for ${{ inputs.tag }}
+    if: github.server_url == 'https://github.com' && inputs.summary_only
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: The release's notes and the material
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json body -q .body > body.md ||
+            { echo "::error::$TAG has no release to summarise"; exit 1; }
+          sh .github/release/kit.sh material "$TAG" . >/dev/null
+      - name: Write the summary
+        env:
+          RELEASE_SUMMARY_API_KEY: ${{ secrets.RELEASE_SUMMARY_API_KEY }}
+        run: |
+          c=.github/release-config.json
+          RELEASE_SUMMARY_BASE_URL=$(jq -r '.summary.base_url // empty' "$c")
+          RELEASE_SUMMARY_MODEL=$(jq -r '.summary.model // empty' "$c")
+          export RELEASE_SUMMARY_BASE_URL RELEASE_SUMMARY_MODEL
+          [ -n "$RELEASE_SUMMARY_BASE_URL" ] || unset RELEASE_SUMMARY_BASE_URL
+          [ -n "$RELEASE_SUMMARY_MODEL" ] || unset RELEASE_SUMMARY_MODEL
+          timeout 120 node .github/release/summarise.mjs --product "$(jq -r .product "$c")" \
+            --version "$TAG" --changelog changelog-section.md --log commit-log.txt \
+            --stat diff-stat.txt --out summary.md || true
+          [ -s summary.md ] || { echo "::error::no summary was written; the notes are unchanged"; exit 1; }
+      - name: Put it on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sh .github/release/kit.sh with-summary body.md summary.md > notes.md
+          gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --notes-file notes.md
+          echo "Summary written to $TAG."
