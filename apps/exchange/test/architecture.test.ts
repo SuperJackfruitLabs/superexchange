@@ -35,9 +35,7 @@ export const UNJOINED_NEIGHBOURS = ["store>config"];
 /** Lines a source file under src/ may have. */
 export const SIZE_LIMIT = 1000;
 /** Files over SIZE_LIMIT and the most lines each may have. Lower these; never raise them. */
-export const OVERSIZE: Record<string, number> = {
-  "store/index.ts": 2317,
-};
+export const OVERSIZE: Record<string, number> = {};
 /** Files in the largest runtime import cycle under src/. Lower it; never raise it. */
 export const LARGEST_CYCLE = 3;
 
