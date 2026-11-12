@@ -1,10 +1,10 @@
 /**
  * SuperExchange: the suite's communication server. Reads its settings, opens its store, builds
  * the speaker's encryption (its device and keys), wires board chat to the transport (gate cards
- * out, people's answers to them back), then listens, gives back any answer a stopped run left
- * unfinished, queues every gate delivered but not yet posted, tries again every encrypted event
- * still waiting for its key, and starts the gate sweep (once now, then every
- * `SUPEREXCHANGE_SWEEP_SECONDS`).
+ * and questions out, people's answers to them back), then listens, gives back any answer a
+ * stopped run left unfinished, queues every gate and question delivered but not yet posted, tries
+ * again every encrypted event still waiting for its key, and starts the gate and question sweeps
+ * (once now, then every `SUPEREXCHANGE_SWEEP_SECONDS`).
  */
 import { join } from "node:path";
 import {
@@ -14,16 +14,20 @@ import {
   createSpeakerCrypto,
 } from "./appservice/index.ts";
 import {
+  answerQuestionAtSuperpipeline,
   createAccounts,
+  createApprovalScope,
   createBoardChat,
   createBoardRooms,
   createGateAnswers,
+  createQuestionAnswers,
   createRoomSender,
   createServiceTokens,
   createSuperpipelineReads,
   describe,
   resolveGateAtSuperpipeline,
   startGateSweep,
+  startQuestionSweep,
 } from "./board-chat/index.ts";
 import { loadConfig } from "./config.ts";
 import { SERVICE, createHandler } from "./routes/index.ts";
@@ -70,6 +74,9 @@ const accounts = createAccounts({
   url: config.orgPlaneUrl,
   credential: config.orgPlaneCredential,
 });
+// Named for the board that verifies it: SuperPipeline checks `aud` against its own URL.
+const mint = (subject: { principalId: string; senderMxid: string }) =>
+  accounts.assert({ ...subject, audience: config.superpipelineUrl });
 const answers = createGateAnswers({
   store,
   client: sender,
@@ -79,8 +86,19 @@ const answers = createGateAnswers({
     resolveGateAtSuperpipeline(input, {
       baseUrl: config.superpipelineUrl,
       // Named for the board that verifies it: SuperPipeline checks `aud` against its own URL.
-      mint: (subject) =>
-        accounts.assert({ ...subject, audience: config.superpipelineUrl }),
+      mint,
+    }),
+  log,
+});
+const questions = createQuestionAnswers({
+  store,
+  client: sender,
+  speaker: rooms.speaker,
+  accounts,
+  answerQuestion: (input) =>
+    answerQuestionAtSuperpipeline(input, {
+      baseUrl: config.superpipelineUrl,
+      mint,
     }),
   log,
 });
@@ -90,6 +108,21 @@ const boardChat = createBoardChat({
   rooms,
   crypto,
   answers,
+  questions,
+  log,
+});
+// This service's own token, for reading only: SuperPipeline checks `aud` against its URL. One
+// holder for both sweeps and the approval-request rule.
+const serviceTokens = createServiceTokens({
+  accounts,
+  audience: config.superpipelineUrl,
+});
+const reads = createSuperpipelineReads({
+  baseUrl: config.superpipelineUrl,
+  tokens: serviceTokens,
+});
+const approvalRequestAllowed = createApprovalScope({
+  tokens: serviceTokens,
   log,
 });
 const countEvents = countEventTypes(log);
@@ -119,6 +152,8 @@ const server = Bun.serve({
       await boardChat.onEvents(txnId, events);
     },
     onGateAccepted: boardChat.gateAccepted,
+    onQuestionAccepted: boardChat.questionAccepted,
+    approvalRequestAllowed,
     log,
   }),
 });
@@ -138,23 +173,21 @@ boardChat.resume();
 const sweep = startGateSweep(
   {
     store,
-    board: createSuperpipelineReads({
-      baseUrl: config.superpipelineUrl,
-      // This service's own token, for reading only: SuperPipeline checks `aud` against its URL.
-      tokens: createServiceTokens({
-        accounts,
-        audience: config.superpipelineUrl,
-      }),
-    }),
+    board: reads,
     chat: boardChat,
     labelFor: (principalId) => accounts.principalLabel(principalId),
     log,
   },
   { intervalMs: config.sweepSeconds * 1000 },
 );
+const questionSweep = startQuestionSweep(
+  { store, board: reads, chat: boardChat, approvalRequestAllowed, log },
+  { intervalMs: config.sweepSeconds * 1000 },
+);
 
 async function shutdown() {
   sweep.stop();
+  questionSweep.stop();
   await server.stop();
   // Before exit: an encryption machine open at exit aborts the process.
   await crypto?.close();

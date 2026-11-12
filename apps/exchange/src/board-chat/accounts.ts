@@ -232,12 +232,17 @@ export function createAccounts(deps: AccountsDeps): Accounts {
 
 /** A JWT's `sub`, read without verifying it (SuperPipeline verifies), or undefined. */
 export function subjectOf(token: string): unknown {
+  return claimOf(token, "sub");
+}
+
+/** One claim of a JWT, read without verifying it, or undefined. */
+export function claimOf(token: string, claim: string): unknown {
   const payload = token.split(".")[1];
   if (payload === undefined) return undefined;
   try {
     return field(
       JSON.parse(Buffer.from(payload, "base64url").toString("utf8")),
-      "sub",
+      claim,
     );
   } catch {
     return undefined;

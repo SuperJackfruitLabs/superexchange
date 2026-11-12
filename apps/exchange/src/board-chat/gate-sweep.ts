@@ -36,9 +36,9 @@ import {
   SuperpipelineError,
   type SuperpipelineReads,
 } from "./superpipeline.ts";
+import { startSweeper, type Sweeper, type SweeperOptions } from "./sweeper.ts";
 
-/** The most the interval is multiplied by while every board keeps failing. */
-export const SWEEP_MAX_BACKOFF = 8;
+export { SWEEP_MAX_BACKOFF } from "./sweeper.ts";
 
 export interface GateSweepDeps {
   store: Pick<
@@ -190,52 +190,18 @@ async function label(
   }
 }
 
-export interface GateSweeper {
-  stop(): void;
-}
-
-export interface SweeperOptions {
-  intervalMs: number;
-  /** Test seams: how the next pass is scheduled and cancelled. */
-  schedule?: (run: () => void, ms: number) => unknown;
-  cancel?: (handle: unknown) => void;
-}
+export type GateSweeper = Sweeper;
 
 /** Sweep now, then every interval (backing off while every board fails), until stopped. */
 export function startGateSweep(
   deps: GateSweepDeps,
   options: SweeperOptions,
 ): GateSweeper {
-  const schedule =
-    options.schedule ?? ((run: () => void, ms: number) => setTimeout(run, ms));
-  const cancel =
-    options.cancel ??
-    ((handle: unknown) =>
-      clearTimeout(handle as ReturnType<typeof setTimeout>));
-  let failing = 0;
-  let stopped = false;
-  let handle: unknown = null;
-
-  async function pass(): Promise<void> {
-    try {
-      const r = await sweepGates(deps);
-      failing = r.boards > 0 && r.failedBoards === r.boards ? failing + 1 : 0;
-    } catch (error) {
-      failing++;
-      deps.log(`board-chat: the sweep failed (${describe(error)})`);
-    }
-    if (stopped) return;
-    const factor = Math.min(2 ** failing, SWEEP_MAX_BACKOFF);
-    handle = schedule(() => void pass(), options.intervalMs * factor);
-  }
-
-  void pass();
-  return {
-    stop() {
-      stopped = true;
-      if (handle !== null) cancel(handle);
-    },
-  };
+  return startSweeper(
+    () => sweepGates(deps),
+    (error) => deps.log(`board-chat: the sweep failed (${describe(error)})`),
+    options,
+  );
 }
 
 /** An error as a log may carry it: status and code only, never a URL, a token or a body. */

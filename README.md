@@ -29,8 +29,8 @@ from a sender outside `@superexchange_*`. The organization plane says who the se
 person may answer, and a gate.v2 answer must name an option, subject or variant the gate offered.
 The plane then asserts the sender for SuperPipeline, the gate is resolved there as that person,
 and one receipt is posted (a prose line and `dev.superpipeline.gate.outcome.v1`). An answer acts
-once: a repeat is told the gate was already decided. Questions, follow-ups and waiting cards move
-here from the AgentPod hub in later steps.
+once: a repeat is told the gate was already decided. Follow-ups and waiting cards move here from
+the AgentPod hub in later steps.
 
 **The gate sweep** asks every enabled board, one at a time, what it is still waiting on: at boot
 and every `SUPEREXCHANGE_SWEEP_SECONDS`. It reads with this service's own token from the
@@ -52,7 +52,38 @@ before it expires), which needs the `gates:read` scope on SuperPipeline's servic
   is logged, and the boards after it are still asked. A pass in which every board failed waits
   twice as long before the next, up to eight times the interval.
 
-**Not yet: reminders and escalations.** The relay carries only `gate.pending` today, so a gate
+**Board questions.** An agent blocked on a person's answer, or a SuperToolkit approval request
+waiting on one, arrives as `elicitation.pending` (CloudEvents type
+`com.superjackfruit.superpipeline.elicitation.pending.v1`) for an opted-in, enabled board, and is
+recorded once and posted like a gate: held until a person has joined, encrypted where the room is,
+exactly once. A question is one message, built by treaty: the question.v2 prose with the v1 card
+(`dev.superpipeline.elicitation`) inside it. An approval request carries every argument in full, so
+it is kept only when the board's `orgId` is the workspace of this service's own token (its `org`
+claim); any other is ignored, by the relay route and the sweep alike.
+
+A person answers in two ways, and the answer is carried to SuperPipeline as that person
+(`POST /v1/boards/:boardId/elicitations/:elicitationId/answer`, with the organization plane's
+assertion, as for gates):
+
+- a `dev.superpipeline.question.answer.v2`, naming its question and referencing the message that
+  asked it, judged against what was recorded when it was posted: an option it offered, with the
+  input that option asks for, bound to the subject it showed (an approval of an incomplete preview,
+  or after expiry, is refused);
+- a typed reply (`m.text`): the number, label or id of an option of the question open in the room,
+  an agent's question before an approval request. Nothing is guessed: anything else gives a
+  linked person the options again. A typed reply never approves a subject-bound question; it can
+  only decline it.
+
+Only a person answers an approval request, and one whose subject could not be carried is never
+allowed from a room. Refusals are said in the room as the hub says them, and one receipt is posted
+("Answered: …"). The question sweep (same interval, its own backoff) reads each enabled board's
+pending questions with this service's own token (`GET /v1/boards/:boardId/elicitations/pending`,
+which needs `approval-requests:relay`): a question the relay missed is posted, and a question the
+board no longer lists (answered on the board, or retired by the agent's next question) is closed
+with one line, or never posted. A board that cannot be read closes nothing.
+
+**Not yet: reminders and escalations.** The relay carries only `gate.pending` and
+`elicitation.pending`, so a gate
 that goes unanswered is not reminded or escalated in its room. That needs SuperPipeline to relay
 `decision.reminded` and `decision.escalated` to SuperExchange, a later change.
 
@@ -74,14 +105,14 @@ an encrypted room never gets plaintext, and a room made in plaintext (staging, b
 is left as it is. With the switch off nothing is posted into such a room, encrypted or not; that
 board's chat comes back when it is re-opted in for a new room (not built yet).
 
-| Route                                                | Who calls it   | What it does                                      |
-| ---------------------------------------------------- | -------------- | ------------------------------------------------- |
-| `GET /healthz`                                       | anyone         | The health check                                  |
-| `PUT /_matrix/app/v1/transactions/:txn`              | the homeserver | Events in, applied once per transaction id        |
-| `POST /_matrix/app/v1/ping`                          | the homeserver | `{}`                                              |
-| `GET /_matrix/app/v1/users/…`, `rooms/…`             | the homeserver | `M_NOT_FOUND` until rooms move here               |
-| `POST /v1/relay/events`                              | the relay      | A signed `gate.pending`, kept for opted-in boards |
-| `GET /v1/boards`, `PUT`/`DELETE /v1/boards/:boardId` | the operator   | Opt a board in, disable it, list them             |
+| Route                                                | Who calls it   | What it does                                                               |
+| ---------------------------------------------------- | -------------- | -------------------------------------------------------------------------- |
+| `GET /healthz`                                       | anyone         | The health check                                                           |
+| `PUT /_matrix/app/v1/transactions/:txn`              | the homeserver | Events in, applied once per transaction id                                 |
+| `POST /_matrix/app/v1/ping`                          | the homeserver | `{}`                                                                       |
+| `GET /_matrix/app/v1/users/…`, `rooms/…`             | the homeserver | `M_NOT_FOUND` until rooms move here                                        |
+| `POST /v1/relay/events`                              | the relay      | A signed `gate.pending` or `elicitation.pending`, kept for opted-in boards |
+| `GET /v1/boards`, `PUT`/`DELETE /v1/boards/:boardId` | the operator   | Opt a board in, disable it, list them                                      |
 
 ## Run it
 
@@ -115,7 +146,7 @@ curl http://127.0.0.1:8080/healthz
 | `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                                                                                  |
 | `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                                                                         |
 | `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved and read; also the assertion and service-token audience                            |
-| `SUPEREXCHANGE_SWEEP_SECONDS`         | How often the gate sweep asks each enabled board: whole seconds from 15 to 86400; 60 when unset                                  |
+| `SUPEREXCHANGE_SWEEP_SECONDS`         | How often the gate and question sweeps ask each enabled board: whole seconds from 15 to 86400; 60 when unset                     |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
 

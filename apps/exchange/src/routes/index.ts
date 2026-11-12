@@ -14,6 +14,7 @@ import {
   type CryptoTransaction,
   type EventsHandler,
 } from "../appservice/index.ts";
+import type { ApprovalRequestAllowed } from "../board-chat/index.ts";
 import type { Config } from "../config.ts";
 import type { Store } from "../store/index.ts";
 import { BOARDS_PATH, createBoardsHandler } from "./boards.ts";
@@ -32,6 +33,10 @@ export interface HandlerDeps {
   onCrypto?: (tx: CryptoTransaction) => void | Promise<void>;
   /** Told of each gate the relay accepted. */
   onGateAccepted?: (gateId: string) => void;
+  /** Told of each question the relay accepted. */
+  onQuestionAccepted?: (elicitationId: string) => void;
+  /** May an approval request on this board be kept? Absent: never. */
+  approvalRequestAllowed?: ApprovalRequestAllowed;
   log?: (line: string) => void;
   /** Test seam for the relay signature's clock. */
   nowMs?: () => number;
@@ -51,6 +56,12 @@ export function createHandler(deps: HandlerDeps) {
     store: deps.store,
     log,
     ...(deps.onGateAccepted ? { onGateAccepted: deps.onGateAccepted } : {}),
+    ...(deps.onQuestionAccepted
+      ? { onQuestionAccepted: deps.onQuestionAccepted }
+      : {}),
+    ...(deps.approvalRequestAllowed
+      ? { approvalRequestAllowed: deps.approvalRequestAllowed }
+      : {}),
     ...(deps.nowMs ? { nowMs: deps.nowMs } : {}),
   });
   const boards = createBoardsHandler({

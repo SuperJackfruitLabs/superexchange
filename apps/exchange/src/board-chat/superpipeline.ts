@@ -1,6 +1,7 @@
 /**
- * SuperPipeline, as board chat needs it: resolving a gate as the person who answered, and reading
- * a board's gates with this service's own token for the sweep.
+ * SuperPipeline, as board chat needs it: resolving a gate and answering a question as the person
+ * who answered, and reading a board's gates and questions with this service's own token for the
+ * sweeps.
  *
  * Resolving **as the person who answered**, with an assertion minted for that answer, is ported
  * from the AgentPod hub's `services/board-chat/gate-resolve.ts` (`resolveGateAtSuperpipeline`):
@@ -17,7 +18,10 @@
  * Reading (`createSuperpipelineReads`) is this service's own: a service token on `gates:read`
  * (the organization plane's, `accounts.ts`), on `GET /v1/boards/:boardId/gates/pending` (the
  * board's pending gates, each a `gate.pending` body) and `GET /v1/boards/:boardId/gates/:gateId`
- * (one gate, and how it was decided). Only reads: deciding stays with the person. A refusal
+ * (one gate, and how it was decided); and, on `approval-requests:relay`,
+ * `GET /v1/boards/:boardId/elicitations/pending` (the board's pending questions, broker approval
+ * requests included, each an `elicitation.pending` body). Only reads: deciding stays with the
+ * person. A refusal
  * throws `SuperpipelineError`, because "nothing pending" and "this token is refused" must never
  * read alike; a 401 also drops the held token, so the next read asks the plane for a new one.
  */
@@ -50,11 +54,71 @@ export async function resolveGateAtSuperpipeline(
   input: ResolveInput,
   deps: ResolveDeps,
 ): Promise<ResolveResult> {
+  return postAsPerson(
+    input,
+    `/v1/boards/${encodeURIComponent(input.boardId)}/gates/${encodeURIComponent(input.gateId)}/resolve`,
+    {
+      decision: input.decision,
+      ...(input.comment ? { comment: input.comment } : {}),
+      ...(input.approvalSubject
+        ? {
+            approvalSubjectId: input.approvalSubject.id,
+            approvalSubjectDigest: input.approvalSubject.digest,
+          }
+        : {}),
+    },
+    deps,
+  );
+}
+
+export interface QuestionAnswerInput {
+  boardId: string;
+  elicitationId: string;
+  /** The option chosen; absent for a free-text answer to a question with no options. */
+  option?: string;
+  /** What the person typed: a free-text answer, or the input an option asked for. */
+  text?: string;
+  /** On a subject-bound question: the binding recorded when it was posted. */
+  subject?: { id: string; digest: string };
+  principalId: string;
+  senderMxid: string;
+}
+
+/**
+ * Answer a board question as the person who answered (the hub's
+ * `answerElicitationAtSuperpipeline`): `POST /v1/boards/:boardId/elicitations/:elicitationId/answer`
+ * with the person's assertion and `{ option?, text?, subject? }`. A broker approval request
+ * (`apr_…`) answers through the same route; the board refuses the asking agent itself, and only
+ * owners and admins may allow a request. The outcome is read as a gate's is.
+ */
+export async function answerQuestionAtSuperpipeline(
+  input: QuestionAnswerInput,
+  deps: ResolveDeps,
+): Promise<ResolveResult> {
+  return postAsPerson(
+    input,
+    `/v1/boards/${encodeURIComponent(input.boardId)}/elicitations/${encodeURIComponent(input.elicitationId)}/answer`,
+    {
+      ...(input.option !== undefined ? { option: input.option } : {}),
+      ...(input.text !== undefined ? { text: input.text } : {}),
+      ...(input.subject !== undefined ? { subject: input.subject } : {}),
+    },
+    deps,
+  );
+}
+
+/** POST `body` to `path` as the person: an assertion minted for them, never this service's token. */
+async function postAsPerson(
+  who: { principalId: string; senderMxid: string },
+  path: string,
+  body: Record<string, unknown>,
+  deps: ResolveDeps,
+): Promise<ResolveResult> {
   let token: string;
   try {
     token = await deps.mint({
-      principalId: input.principalId,
-      senderMxid: input.senderMxid,
+      principalId: who.principalId,
+      senderMxid: who.senderMxid,
     });
   } catch (error) {
     // Refused or unreachable is a failed outcome the caller reports, never a token-less call to
@@ -65,7 +129,6 @@ export async function resolveGateAtSuperpipeline(
   }
 
   const base = deps.baseUrl.replace(/\/+$/, "");
-  const path = `/v1/boards/${encodeURIComponent(input.boardId)}/gates/${encodeURIComponent(input.gateId)}/resolve`;
   let response: Response;
   try {
     response = await (deps.fetch ?? fetch)(`${base}${path}`, {
@@ -74,16 +137,7 @@ export async function resolveGateAtSuperpipeline(
         "content-type": "application/json",
         authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        decision: input.decision,
-        ...(input.comment ? { comment: input.comment } : {}),
-        ...(input.approvalSubject
-          ? {
-              approvalSubjectId: input.approvalSubject.id,
-              approvalSubjectDigest: input.approvalSubject.digest,
-            }
-          : {}),
-      }),
+      body: JSON.stringify(body),
       // Answers are carried one at a time: a board that never answers must not stall the rest.
       signal: AbortSignal.timeout(deps.timeoutMs ?? 10_000),
     });
@@ -150,6 +204,11 @@ export interface SuperpipelineReads {
   pendingGates(boardId: string): Promise<unknown[]>;
   /** One gate. Throws `SuperpipelineError` when the board does not answer with one. */
   gate(boardId: string, gateId: string): Promise<BoardGate>;
+  /**
+   * The board's pending questions, broker approval requests included, unchecked: each is read
+   * with treaty's `isElicitationPending`. Needs `approval-requests:relay`.
+   */
+  pendingQuestions(boardId: string): Promise<unknown[]>;
 }
 
 export interface ReadsDeps {
@@ -200,6 +259,17 @@ export function createSuperpipelineReads(deps: ReadsDeps): SuperpipelineReads {
       if (!Array.isArray(gates))
         throw new SuperpipelineError(200, "malformed_response");
       return gates as unknown[];
+    },
+
+    async pendingQuestions(boardId) {
+      const body = await read(
+        `/v1/boards/${enc(boardId)}/elicitations/pending`,
+      );
+      const questions = field(body, "elicitations");
+      // Absence from this list closes a question: a body without one is never read as empty.
+      if (!Array.isArray(questions))
+        throw new SuperpipelineError(200, "malformed_response");
+      return questions as unknown[];
     },
 
     async gate(boardId, gateId) {

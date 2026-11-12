@@ -4,8 +4,9 @@
  * an operator has pointed at it, the gates the event relay delivered for them, each board's room
  * and who is in it (and whether it is end-to-end encrypted), which gates have been posted there
  * with what they offered, whether a person's answer to each has acted and its receipt been
- * posted, which gates the board says were decided elsewhere and settled here, the speaker's
- * encryption device, and encrypted events still waiting for their key.
+ * posted, which gates the board says were decided elsewhere and settled here, the questions the
+ * relay delivered and the ones posted (with what they offered, and whether their receipt has been
+ * claimed), the speaker's encryption device, and encrypted events still waiting for their key.
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -96,6 +97,38 @@ export const MIGRATIONS: readonly string[] = [
   `ALTER TABLE gate_events ADD COLUMN settled_at TEXT;
    ALTER TABLE gate_events ADD COLUMN settled_decision TEXT;
    ALTER TABLE gate_deliveries ADD COLUMN settled_at TEXT;`,
+  // Board questions (elicitation.pending): what the relay or the sweep delivered, and each one
+  // posted into its room with what it offered, so an answer is judged against what was shown. A
+  // question is one event (its prose, the v1 card inside it); `outcome_posted_at` is its one
+  // receipt, claimed by the answer path or by the sweep when the board no longer waits on it.
+  `CREATE TABLE question_deliveries (
+     elicitation_id TEXT PRIMARY KEY,
+     board_id TEXT NOT NULL,
+     received_at TEXT NOT NULL,
+     body TEXT NOT NULL,
+     settled_at TEXT
+   );
+   CREATE INDEX question_deliveries_board ON question_deliveries (board_id);
+   CREATE TABLE question_events (
+     elicitation_id TEXT PRIMARY KEY,
+     board_id TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     event_id TEXT,
+     claimed_at TEXT NOT NULL,
+     posted_at TEXT,
+     options TEXT NOT NULL,
+     options_v2 TEXT NOT NULL,
+     free_text_max_length INTEGER,
+     subject_id TEXT,
+     subject_digest TEXT,
+     subject_preview_complete INTEGER,
+     subject_expires_at TEXT,
+     approval_request INTEGER NOT NULL,
+     outcome_posted_at TEXT,
+     settled_at TEXT
+   );
+   CREATE INDEX question_events_room ON question_events (room_id);
+   CREATE INDEX question_events_board ON question_events (board_id);`,
 ];
 
 export class StoreError extends Error {
@@ -207,6 +240,71 @@ export interface GateEvent {
   settledDecision: string | null;
 }
 
+/** One option of a question as it was posted, in question.v2's shape (treaty's `QuestionOptionV2`). */
+export interface QuestionOfferOption {
+  id: string;
+  label: string;
+  meaning: string;
+  needs_comment: boolean;
+  input?: {
+    kind: "text" | "url";
+    label?: string;
+    required: boolean;
+    max_length: number;
+  };
+  scope?: string;
+  requires?: string;
+}
+
+/** The subject a question is bound to, as it was posted. */
+export interface QuestionOfferSubject {
+  id: string;
+  digest: string;
+  /** False refuses an approving answer: the card could not show all of it. */
+  previewComplete: boolean;
+  /** ISO; null when the subject named no expiry that could be read. */
+  expiresAt: string | null;
+}
+
+/**
+ * What a question offered when it was posted. Recorded with the claim, before anything is sent:
+ * a structured answer is judged against `optionsV2`, a typed reply matched against `options`.
+ */
+export interface QuestionOffer {
+  /** `{id, label}` in the order the prose numbers them: what a typed reply is matched against. */
+  options: Array<{ id: string; label: string }>;
+  /** What question.v2 carried. */
+  optionsV2: QuestionOfferOption[];
+  /** A question with no options is answered by typing, at most this many characters; else null. */
+  freeTextMaxLength: number | null;
+  subject: QuestionOfferSubject | null;
+  /** A SuperToolkit approval request: answered by a person only, never allowed unbound. */
+  approvalRequest: boolean;
+}
+
+/** A question's claim on its room. No `eventId` means claimed and not yet posted. */
+export interface QuestionEvent {
+  elicitationId: string;
+  boardId: string;
+  roomId: string;
+  /** The prose message: the one event an answer may reference. */
+  eventId: string | null;
+  claimedAt: string;
+  postedAt: string | null;
+  offer: QuestionOffer;
+  /** Set once the receipt is claimed: a question gets one. */
+  outcomePostedAt: string | null;
+  /** Set when the sweep claimed the receipt for a question the board no longer waits on. */
+  settledAt: string | null;
+}
+
+/** A delivered question with no posted event yet. */
+export interface UnpostedQuestion {
+  elicitationId: string;
+  boardId: string;
+  body: unknown;
+}
+
 /** A delivered gate with no posted event yet. */
 export interface UnpostedGate {
   gateId: string;
@@ -305,6 +403,45 @@ export interface Store {
    * an answer, so such a claim was left by a run that stopped mid-answer. Answers how many.
    */
   releaseUnfinishedOutcomes(): number;
+
+  /** Record a delivered question. True when new, false when this id was already recorded. */
+  recordQuestionDelivery(
+    elicitationId: string,
+    boardId: string,
+    body: unknown,
+  ): boolean;
+  /** The recorded body of a question, and when it was settled (null while it is not), or null. */
+  questionDelivery(
+    elicitationId: string,
+  ): { boardId: string; body: unknown; settledAt: string | null } | null;
+  /** Delivered questions not yet posted and not settled, oldest first; only `boardId`'s if given. */
+  unpostedQuestions(boardId?: string): UnpostedQuestion[];
+  /** Mark a delivered question settled: never posted after this. True when this call did. */
+  settleQuestionDelivery(elicitationId: string): boolean;
+  /**
+   * Claim a question's post into a room, recording what it offers. True when this call made the
+   * claim; false when it was already claimed, and the offer is not changed.
+   */
+  claimQuestionEvent(
+    elicitationId: string,
+    boardId: string,
+    roomId: string,
+    offer: QuestionOffer,
+  ): boolean;
+  questionEvent(elicitationId: string): QuestionEvent | null;
+  /** Record the question's message, and that it is posted. */
+  recordQuestionPosted(elicitationId: string, eventId: string): void;
+  /** A room's posted questions whose receipt is not claimed, newest first. */
+  openQuestionsInRoom(roomId: string): QuestionEvent[];
+  /** Claim a posted question's receipt before it is sent. True once per question. */
+  claimQuestionReceipt(elicitationId: string): boolean;
+  /**
+   * The sweep's claim on a posted question's receipt, for one the board no longer waits on: true
+   * once, false once any receipt is claimed or the question is not posted.
+   */
+  settleQuestionEvent(elicitationId: string): boolean;
+  /** A board's posted questions whose receipt is not claimed, oldest first. */
+  postedQuestionsAwaitingOutcome(boardId: string): QuestionEvent[];
 
   /** The encryption device recorded for a user, or null. */
   cryptoDevice(userId: string): string | null;
@@ -663,6 +800,148 @@ export function openStore(
         .run().changes;
     },
 
+    recordQuestionDelivery(elicitationId, boardId, body) {
+      return (
+        db
+          .query(
+            "INSERT INTO question_deliveries (elicitation_id, board_id, received_at, body) VALUES (?, ?, ?, ?) ON CONFLICT (elicitation_id) DO NOTHING",
+          )
+          .run(elicitationId, boardId, stamp(), JSON.stringify(body))
+          .changes === 1
+      );
+    },
+
+    questionDelivery(elicitationId) {
+      const row = db
+        .query<
+          { board_id: string; body: string; settled_at: string | null },
+          [string]
+        >("SELECT board_id, body, settled_at FROM question_deliveries WHERE elicitation_id = ?")
+        .get(elicitationId);
+      return row
+        ? {
+            boardId: row.board_id,
+            body: JSON.parse(row.body) as unknown,
+            settledAt: row.settled_at,
+          }
+        : null;
+    },
+
+    unpostedQuestions(boardId) {
+      return db
+        .query<
+          { elicitation_id: string; board_id: string; body: string },
+          [string | null, string | null]
+        >(
+          `SELECT d.elicitation_id, d.board_id, d.body FROM question_deliveries d
+           LEFT JOIN question_events e ON e.elicitation_id = d.elicitation_id
+           WHERE e.posted_at IS NULL AND d.settled_at IS NULL
+             AND (?1 IS NULL OR d.board_id = ?2)
+           ORDER BY d.received_at, d.elicitation_id`,
+        )
+        .all(boardId ?? null, boardId ?? null)
+        .map((row) => ({
+          elicitationId: row.elicitation_id,
+          boardId: row.board_id,
+          body: JSON.parse(row.body) as unknown,
+        }));
+    },
+
+    settleQuestionDelivery(elicitationId) {
+      return (
+        db
+          .query(
+            "UPDATE question_deliveries SET settled_at = ? WHERE elicitation_id = ? AND settled_at IS NULL",
+          )
+          .run(stamp(), elicitationId).changes === 1
+      );
+    },
+
+    claimQuestionEvent(elicitationId, boardId, roomId, offer) {
+      return (
+        db
+          .query(
+            `INSERT INTO question_events (elicitation_id, board_id, room_id, claimed_at, options,
+               options_v2, free_text_max_length, subject_id, subject_digest,
+               subject_preview_complete, subject_expires_at, approval_request)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (elicitation_id) DO NOTHING`,
+          )
+          .run(
+            elicitationId,
+            boardId,
+            roomId,
+            stamp(),
+            JSON.stringify(offer.options),
+            JSON.stringify(offer.optionsV2),
+            offer.freeTextMaxLength,
+            offer.subject?.id ?? null,
+            offer.subject?.digest ?? null,
+            offer.subject ? (offer.subject.previewComplete ? 1 : 0) : null,
+            offer.subject?.expiresAt ?? null,
+            offer.approvalRequest ? 1 : 0,
+          ).changes === 1
+      );
+    },
+
+    questionEvent(elicitationId) {
+      const row = db
+        .query<
+          QuestionEventRow,
+          [string]
+        >("SELECT * FROM question_events WHERE elicitation_id = ?")
+        .get(elicitationId);
+      return row ? toQuestionEvent(row) : null;
+    },
+
+    recordQuestionPosted(elicitationId, eventId) {
+      db.query(
+        "UPDATE question_events SET event_id = ?, posted_at = ? WHERE elicitation_id = ?",
+      ).run(eventId, stamp(), elicitationId);
+    },
+
+    openQuestionsInRoom(roomId) {
+      return db
+        .query<QuestionEventRow, [string]>(
+          `SELECT * FROM question_events
+           WHERE room_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL
+           ORDER BY posted_at DESC, rowid DESC`,
+        )
+        .all(roomId)
+        .map(toQuestionEvent);
+    },
+
+    claimQuestionReceipt(elicitationId) {
+      return (
+        db
+          .query(
+            "UPDATE question_events SET outcome_posted_at = ? WHERE elicitation_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL",
+          )
+          .run(stamp(), elicitationId).changes === 1
+      );
+    },
+
+    settleQuestionEvent(elicitationId) {
+      const at = stamp();
+      return (
+        db
+          .query(
+            "UPDATE question_events SET outcome_posted_at = ?1, settled_at = ?1 WHERE elicitation_id = ?2 AND posted_at IS NOT NULL AND outcome_posted_at IS NULL",
+          )
+          .run(at, elicitationId).changes === 1
+      );
+    },
+
+    postedQuestionsAwaitingOutcome(boardId) {
+      return db
+        .query<QuestionEventRow, [string]>(
+          `SELECT * FROM question_events
+           WHERE board_id = ? AND posted_at IS NOT NULL AND outcome_posted_at IS NULL
+           ORDER BY posted_at, rowid`,
+        )
+        .all(boardId)
+        .map(toQuestionEvent);
+    },
+
     cryptoDevice(userId) {
       const row = db
         .query<
@@ -799,6 +1078,52 @@ const toGateEvent = (row: GateEventRow): GateEvent => ({
   outcomePostedAt: row.outcome_posted_at,
   settledAt: row.settled_at,
   settledDecision: row.settled_decision,
+});
+
+interface QuestionEventRow {
+  elicitation_id: string;
+  board_id: string;
+  room_id: string;
+  event_id: string | null;
+  claimed_at: string;
+  posted_at: string | null;
+  options: string;
+  options_v2: string;
+  free_text_max_length: number | null;
+  subject_id: string | null;
+  subject_digest: string | null;
+  subject_preview_complete: number | null;
+  subject_expires_at: string | null;
+  approval_request: number;
+  outcome_posted_at: string | null;
+  settled_at: string | null;
+}
+
+const toQuestionEvent = (row: QuestionEventRow): QuestionEvent => ({
+  elicitationId: row.elicitation_id,
+  boardId: row.board_id,
+  roomId: row.room_id,
+  eventId: row.event_id,
+  claimedAt: row.claimed_at,
+  postedAt: row.posted_at,
+  offer: {
+    options: JSON.parse(row.options) as Array<{ id: string; label: string }>,
+    optionsV2: JSON.parse(row.options_v2) as QuestionOfferOption[],
+    freeTextMaxLength: row.free_text_max_length,
+    subject:
+      row.subject_id === null || row.subject_digest === null
+        ? null
+        : {
+            id: row.subject_id,
+            digest: row.subject_digest,
+            // Anything but a recorded 1 is not complete: an approval of it is refused.
+            previewComplete: row.subject_preview_complete === 1,
+            expiresAt: row.subject_expires_at,
+          },
+    approvalRequest: row.approval_request === 1,
+  },
+  outcomePostedAt: row.outcome_posted_at,
+  settledAt: row.settled_at,
 });
 
 const toBoardRoom = (row: BoardRoomRow): BoardRoom => ({
