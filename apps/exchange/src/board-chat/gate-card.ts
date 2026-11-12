@@ -177,7 +177,6 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
 
     const claim = store.gateEvent(gateId);
     if (claim === null) return { status: "failed", step: "send" };
-    if (claim.postedAt) return { status: "already" };
     roomId = claim.roomId;
 
     try {

@@ -453,7 +453,8 @@ describe("posted exactly once", () => {
     s.chat.resume();
     await s.chat.idle();
     expect(s.store.gateEvent("gte_1")?.postedAt).not.toBeNull();
-    // One prose, one card: the prose was not sent again.
+    // One prose, one card: the prose was not sent again, not even under its own id.
+    expect(s.hs.callsTo("/send/m.room.message")).toHaveLength(1);
     expect(s.hs.sent.map((e) => e.type)).toEqual([
       "m.room.message",
       GATE_EVENT_TYPE,
