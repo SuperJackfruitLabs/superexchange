@@ -18,7 +18,9 @@ export {
 } from "./transactions.ts";
 export {
   MatrixClientError,
+  ROOM_ENCRYPTION_STATE,
   createClient,
   type AppserviceClient,
   type ClientDeps,
+  type CreateRoomOptions,
 } from "./client.ts";

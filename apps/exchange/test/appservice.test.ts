@@ -301,4 +301,146 @@ describe("the client-server client", () => {
     expect(message).toBe("whoami answered 401 M_UNKNOWN_TOKEN");
     expect(message).not.toContain(AS_TOKEN);
   });
+
+  const SPEAKER = "@superexchange_board:example.test";
+
+  test("setDisplayName puts the name as the user itself", async () => {
+    const { c, calls } = client(() => Response.json({}));
+    await c.setDisplayName(SPEAKER, "superpipeline");
+    const call = calls[0];
+    expect(call?.init.method).toBe("PUT");
+    expect(call?.url.pathname).toBe(
+      `/_matrix/client/v3/profile/${encodeURIComponent(SPEAKER)}/displayname`,
+    );
+    expect(call?.url.searchParams.get("user_id")).toBe(SPEAKER);
+    expect(JSON.parse(String(call?.init.body))).toEqual({
+      displayname: "superpipeline",
+    });
+  });
+
+  test("createRoom makes a private room, encrypted only when asked", async () => {
+    const { c, calls } = client(() =>
+      Response.json({ room_id: "!r:example.test" }),
+    );
+    const options = {
+      aliasLocalpart: "superexchange_board_brd_a",
+      name: "Board A",
+      topic: "Approvals",
+      invite: ["@ana:example.test"],
+      powerLevels: { [SPEAKER]: 100 },
+    };
+    expect(await c.createRoom(SPEAKER, { ...options, encrypted: true })).toBe(
+      "!r:example.test",
+    );
+    await c.createRoom(SPEAKER, { ...options, encrypted: false });
+    const [encrypted, plaintext] = calls.map(
+      (call) => JSON.parse(String(call.init.body)) as Record<string, unknown>,
+    );
+    expect(calls[0]?.url.pathname).toBe("/_matrix/client/v3/createRoom");
+    expect(calls[0]?.url.searchParams.get("user_id")).toBe(SPEAKER);
+    expect(encrypted).toEqual({
+      room_alias_name: "superexchange_board_brd_a",
+      name: "Board A",
+      topic: "Approvals",
+      preset: "private_chat",
+      visibility: "private",
+      invite: ["@ana:example.test"],
+      initial_state: [
+        {
+          type: "m.room.encryption",
+          state_key: "",
+          content: { algorithm: "m.megolm.v1.aes-sha2" },
+        },
+      ],
+      power_level_content_override: { users: { [SPEAKER]: 100 } },
+    });
+    expect(plaintext?.initial_state).toEqual([]);
+  });
+
+  test("createRoom on a taken alias throws M_ROOM_IN_USE", async () => {
+    const { c } = client(() =>
+      Response.json({ errcode: "M_ROOM_IN_USE" }, { status: 400 }),
+    );
+    await expect(
+      c.createRoom(SPEAKER, {
+        aliasLocalpart: "a",
+        name: "a",
+        topic: "a",
+        invite: [],
+        encrypted: false,
+      }),
+    ).rejects.toMatchObject({
+      endpoint: "createRoom",
+      errcode: "M_ROOM_IN_USE",
+    });
+  });
+
+  test("resolveAlias answers the room, or null for an alias that points nowhere", async () => {
+    const { c, calls } = client((url) =>
+      url.pathname.endsWith(encodeURIComponent("#known:example.test"))
+        ? Response.json({ room_id: "!r:example.test", servers: [] })
+        : Response.json({ errcode: "M_NOT_FOUND" }, { status: 404 }),
+    );
+    expect(await c.resolveAlias("#known:example.test")).toBe("!r:example.test");
+    expect(await c.resolveAlias("#gone:example.test")).toBeNull();
+    expect(calls[0]?.url.pathname).toBe(
+      `/_matrix/client/v3/directory/room/${encodeURIComponent("#known:example.test")}`,
+    );
+  });
+
+  test("invite and joinedMembers speak as the asserted user", async () => {
+    const { c, calls } = client((url) =>
+      url.pathname.endsWith("/joined_members")
+        ? Response.json({
+            joined: { [SPEAKER]: {}, "@ana:example.test": {} },
+          })
+        : Response.json({}),
+    );
+    await c.invite(SPEAKER, "!r:example.test", "@ana:example.test");
+    expect(await c.joinedMembers(SPEAKER, "!r:example.test")).toEqual([
+      SPEAKER,
+      "@ana:example.test",
+    ]);
+    expect(calls[0]?.url.pathname).toBe(
+      `/_matrix/client/v3/rooms/${encodeURIComponent("!r:example.test")}/invite`,
+    );
+    expect(JSON.parse(String(calls[0]?.init.body))).toEqual({
+      user_id: "@ana:example.test",
+    });
+    for (const call of calls)
+      expect(call.url.searchParams.get("user_id")).toBe(SPEAKER);
+  });
+
+  test("sendEvent PUTs under the caller's transaction id and answers the event id", async () => {
+    const { c, calls } = client(() => Response.json({ event_id: "$e1" }));
+    expect(
+      await c.sendEvent(SPEAKER, "!r:example.test", "dev.x.v1", "sx/gate 1", {
+        a: 1,
+      }),
+    ).toBe("$e1");
+    const call = calls[0];
+    expect(call?.init.method).toBe("PUT");
+    expect(call?.url.pathname).toBe(
+      `/_matrix/client/v3/rooms/${encodeURIComponent("!r:example.test")}/send/dev.x.v1/${encodeURIComponent("sx/gate 1")}`,
+    );
+    expect(call?.url.searchParams.get("user_id")).toBe(SPEAKER);
+    expect(JSON.parse(String(call?.init.body))).toEqual({ a: 1 });
+  });
+
+  test("a refused send throws with its errcode, and a send with no event id is an error", async () => {
+    const refused = client(() =>
+      Response.json({ errcode: "M_FORBIDDEN" }, { status: 403 }),
+    );
+    await expect(
+      refused.c.sendEvent(SPEAKER, "!r:x", "t", "txn", {}),
+    ).rejects.toMatchObject({
+      endpoint: "send",
+      status: 403,
+      errcode: "M_FORBIDDEN",
+    });
+    const empty = client(() => Response.json({}));
+    await expect(
+      empty.c.sendEvent(SPEAKER, "!r:x", "t", "txn", {}),
+    ).rejects.toBeInstanceOf(MatrixClientError);
+  });
 });
