@@ -48,14 +48,9 @@ import {
   GATE_EVENT_TYPE,
   GATE_REQUEST_CONTENT_KEY,
   gateEventContent,
-  gateOptionsV2,
   gateRequestCard,
-  gateSubjectV2,
   gateV2Content,
-  gateVariantsV2,
   isGatePending,
-  quorumV2,
-  type GatePendingDelivery,
 } from "@superjackfruitlabs/treaty-matrix-events";
 import {
   ENCRYPTED_EVENT_TYPE,
@@ -66,7 +61,6 @@ import {
 import type {
   BoardRoom,
   EscalationInvite,
-  GateOffer,
   Store,
   WaitKey,
 } from "../store/index.ts";
@@ -119,7 +113,10 @@ import {
   type SettleOutcome,
 } from "./gate-receipt.ts";
 import type { RoomRefusal, RoomSender } from "./room-sender.ts";
+import { gateOffer, gateTxnId } from "./gate-offer.ts";
 import { describe, type BoardRooms } from "./rooms.ts";
+
+export { gateOffer, gateTxnId } from "./gate-offer.ts";
 
 /** How long an encrypted event may wait for its key before it is given up on. */
 export const PENDING_TTL_MS = 60 * 60_000;
@@ -128,45 +125,6 @@ export const PENDING_MAX = 200;
 
 /** The event type of the prose message. */
 const MESSAGE = "m.room.message";
-
-/** The transaction id a gate's event is sent under: the same on every try. */
-export function gateTxnId(
-  gateId: string,
-  part: "prose" | "card" | "outcome.prose" | "outcome.card",
-): string {
-  return `superexchange.gate.${gateId}.${part}`;
-}
-
-/**
- * What a gate offers, exactly as its gate.v2 carries it (the hub's `claimGate`): the options, the
- * subject an approval binds to, or the variants it offers a choice of, and its quorum. An answer
- * is checked against this record, never against a list.
- */
-export function gateOffer(gate: GatePendingDelivery): GateOffer {
-  const subject = gateSubjectV2(gate);
-  const variants = gateVariantsV2(gate);
-  return {
-    options: gateOptionsV2(gate).map((o) => ({
-      id: o.id,
-      label: o.label,
-      meaning: o.meaning,
-      needs_comment: o.needs_comment,
-    })),
-    subjectId: subject?.id ?? null,
-    subjectDigest: subject?.digest ?? null,
-    subjectPreviewComplete: subject?.preview_complete ?? null,
-    variants:
-      variants?.map((v) => ({
-        id: v.id,
-        label: v.label,
-        subject_id: v.subject.id,
-        digest: v.subject.digest,
-        preview_complete: v.subject.preview_complete,
-        expires_at: v.subject.expires_at,
-      })) ?? null,
-    quorum: quorumV2(gate.quorum),
-  };
-}
 
 export type PostOutcome =
   | {

@@ -36,8 +36,8 @@ export const UNJOINED_NEIGHBOURS = ["store>config"];
 export const SIZE_LIMIT = 1000;
 /** Files over SIZE_LIMIT and the most lines each may have. Lower these; never raise them. */
 export const OVERSIZE: Record<string, number> = {};
-/** Files in the largest runtime import cycle under src/. Lower it; never raise it. */
-export const LARGEST_CYCLE = 3;
+/** Files in the largest runtime import cycle under src/. It is zero: no file loads itself back. */
+export const LARGEST_CYCLE = 0;
 
 /** Relative import specifiers in a TypeScript source (static, dynamic and re-exports). */
 export function relativeImports(source: string): string[] {
