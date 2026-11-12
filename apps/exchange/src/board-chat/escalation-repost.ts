@@ -53,7 +53,7 @@ import type {
 } from "../store/index.ts";
 import { attentionOffer } from "./attention-card.ts";
 import { followupOffer } from "./followup-card.ts";
-import { gateOffer } from "./gate-card.ts";
+import { gateOffer } from "./gate-offer.ts";
 import {
   checksWaitingCardContent,
   readWaitingChecks,

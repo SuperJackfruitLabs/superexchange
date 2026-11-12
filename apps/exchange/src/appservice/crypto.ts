@@ -34,6 +34,7 @@ import type {
   DecryptedRoomEvent,
   OlmMachine,
 } from "@matrix-org/matrix-sdk-crypto-nodejs";
+import type * as MatrixCrypto from "@matrix-org/matrix-sdk-crypto-nodejs";
 import type { Store } from "../store/index.ts";
 import type { AppserviceClient } from "./client.ts";
 import {
@@ -182,7 +183,7 @@ export const STALE_RETRY_COOLDOWN_MS = 10 * 60_000;
 /** The most passes an outbox drain takes before it is called stuck. */
 const MAX_FLUSH_PASSES = 10;
 
-type Binding = typeof import("@matrix-org/matrix-sdk-crypto-nodejs");
+type Binding = typeof MatrixCrypto;
 
 export function createSpeakerCrypto(deps: SpeakerCryptoDeps): SpeakerCrypto {
   const { userId, log } = deps;
@@ -300,7 +301,7 @@ export function createSpeakerCrypto(deps: SpeakerCryptoDeps): SpeakerCrypto {
         );
       }
     }
-    const upload = reqs.uploadKeysReq as unknown as CryptoRequest | undefined;
+    const upload = reqs.uploadKeysReq;
     if (upload) {
       const answer = await sendRequest(deviceId, {
         ...plain(upload),
@@ -333,7 +334,7 @@ export function createSpeakerCrypto(deps: SpeakerCryptoDeps): SpeakerCrypto {
       const requests = await m.outgoingRequests();
       if (requests.length === 0) return;
       for (const request of requests) {
-        const r = plain(request as unknown as CryptoRequest);
+        const r = plain(request);
         const answer = await sendRequest(deviceId, r);
         await m.markRequestAsSent(r.id, r.type, answer);
       }
@@ -364,7 +365,7 @@ export function createSpeakerCrypto(deps: SpeakerCryptoDeps): SpeakerCrypto {
   ) {
     const missing = await m.getMissingSessions(recipients);
     if (missing) {
-      const r = plain(missing as unknown as CryptoRequest);
+      const r = plain(missing);
       const answer = await sendRequest(deviceId, {
         ...r,
         type: REQUEST_TYPE.KeysClaim,
@@ -433,7 +434,7 @@ export function createSpeakerCrypto(deps: SpeakerCryptoDeps): SpeakerCrypto {
 
         // A device that refused a session (`m.no_olm`) gets one more chance with our copy of its
         // identity thrown away first; one that refuses again is left alone for a while.
-        const stale = noOlmRecipients(shares as unknown as CryptoRequest[]);
+        const stale = noOlmRecipients(shares);
         const retry = worthRetrying(roomId, stale);
         if (retry.length > 0) {
           log(
@@ -450,9 +451,7 @@ export function createSpeakerCrypto(deps: SpeakerCryptoDeps): SpeakerCrypto {
           );
           await flush(m, deviceId);
           shares = await shareKey(b, m, deviceId, roomId, recipients);
-          const still = new Set(
-            noOlmRecipients(shares as unknown as CryptoRequest[]),
-          );
+          const still = new Set(noOlmRecipients(shares));
           for (const user of retry)
             if (!still.has(user)) staleTried.delete(`${roomId}\u0000${user}`);
         }

@@ -121,7 +121,7 @@ function subjectQuestion(over: Partial<ElicitationPendingDelivery> = {}) {
       previewComplete: true,
     },
     ...over,
-  } as Partial<ElicitationPendingDelivery>);
+  });
 }
 
 /** A SuperToolkit approval request hosted on the board. */
@@ -154,7 +154,7 @@ function approvalRequest(over: Partial<ElicitationPendingDelivery> = {}) {
       previewComplete: true,
     },
     ...over,
-  } as Partial<ElicitationPendingDelivery>);
+  });
 }
 
 /** A homeserver for sends, joined_members and invites; a repeated transaction id is the first event. */

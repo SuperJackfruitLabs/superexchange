@@ -20,7 +20,7 @@ import {
 } from "@superjackfruitlabs/treaty-matrix-events";
 import type { AppserviceClient } from "../appservice/index.ts";
 import type { GateEvent, Store } from "../store/index.ts";
-import { gateTxnId } from "./gate-card.ts";
+import { gateTxnId } from "./gate-offer.ts";
 import type { RoomSender } from "./room-sender.ts";
 
 /** How a gate was decided, as its receipt says it. */

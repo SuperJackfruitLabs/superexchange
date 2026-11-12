@@ -43,6 +43,9 @@ A finding names the file and line and says what to do. Prefer no finding to a we
 
 - An import that breaks the layers in `apps/exchange/test/architecture.test.ts`, or a change to
   the layer list that lets one through.
+- A raised lint baseline (`scripts/lint-baseline.json`), `OVERSIZE` entry or `LARGEST_CYCLE`, or
+  a changed `apps/exchange/test/fixtures/store-trace.json`: the last means the store now does
+  something different, and the pull request must say why.
 - A setting's value (a token, a secret, a URL with credentials) reaching a log line, an error or
   a response.
 - A Matrix event built or read here that disagrees with treaty's board-room contract

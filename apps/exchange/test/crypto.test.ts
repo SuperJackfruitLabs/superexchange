@@ -247,7 +247,7 @@ async function personDevice(hs: ReturnType<typeof keyServer>) {
       const requests = await machine.outgoingRequests();
       if (requests.length === 0) return;
       for (const r of requests)
-        await carry(r as never, (r as unknown as { type: number }).type);
+        await carry(r, (r as unknown as { type: number }).type);
     }
   };
   await flush();
@@ -270,13 +270,13 @@ async function personDevice(hs: ReturnType<typeof keyServer>) {
       await machine.updateTrackedUsers(members);
       await flush();
       const missing = await machine.getMissingSessions(members);
-      if (missing) await carry(missing as never, 2);
+      if (missing) await carry(missing, 2);
       for (const share of await machine.shareRoomKey(
         new RoomId(ROOM),
         members,
         new EncryptionSettings(),
       ))
-        await carry(share as never, 3);
+        await carry(share, 3);
       return JSON.parse(
         await machine.encryptRoomEvent(
           new RoomId(ROOM),

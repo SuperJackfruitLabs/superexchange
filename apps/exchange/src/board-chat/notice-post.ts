@@ -265,7 +265,7 @@ async function prepare(
       return replyTo;
     }
     case "approval_recorded": {
-      const d = n.body as unknown as GateApprovalRecordedDelivery;
+      const d = n.body as GateApprovalRecordedDelivery;
       const quorum = quorumV2(d.quorum);
       // The board's count, recorded first: an approving answer is judged against it.
       if (quorum) store.recordGateQuorum(d.gateId, quorum);
@@ -512,7 +512,7 @@ async function compose(deps: NoticePostDeps, n: Notice): Promise<Said> {
         ),
       };
     case "approval_recorded": {
-      const d = n.body as unknown as GateApprovalRecordedDelivery;
+      const d = n.body as GateApprovalRecordedDelivery;
       const approval = approvalV2(d.approval);
       const quorum = quorumV2(d.quorum);
       if (!approval || !quorum) throw new Error("malformed");
@@ -547,7 +547,7 @@ async function compose(deps: NoticePostDeps, n: Notice): Promise<Said> {
       };
     }
     case "released": {
-      const d = n.body as unknown as DecisionReleasedDelivery;
+      const d = n.body as DecisionReleasedDelivery;
       return {
         prose: text(releasedBody(d)),
         structured: {
@@ -557,7 +557,7 @@ async function compose(deps: NoticePostDeps, n: Notice): Promise<Said> {
       };
     }
     case "pulled_back": {
-      const d = n.body as unknown as DecisionPulledBackDelivery;
+      const d = n.body as DecisionPulledBackDelivery;
       const who = await nameOf(deps, d.pulledBackBy);
       return {
         prose: text(pulledBackBody({ who, comment: d.comment })),
@@ -569,9 +569,7 @@ async function compose(deps: NoticePostDeps, n: Notice): Promise<Said> {
     }
     case "check_failed":
     case "check_overridden": {
-      const d = n.body as unknown as
-        | CheckFailedDelivery
-        | CheckOverriddenDelivery;
+      const d = n.body as CheckFailedDelivery | CheckOverriddenDelivery;
       const waiting = replyTo
         ? store.openChecksWaiting(
             d.boardId,
