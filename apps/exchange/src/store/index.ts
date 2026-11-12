@@ -232,6 +232,13 @@ export const MIGRATIONS: readonly string[] = [
      PRIMARY KEY (board_id, arrival_id)
    );
    CREATE INDEX checks_waiting_event ON checks_waiting (event_id);`,
+  // 9. Board chat tells a person linked to nobody how to link, at most once a day in a room.
+  `CREATE TABLE link_hints (
+     sender TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     day TEXT NOT NULL,
+     PRIMARY KEY (sender, room_id, day)
+   );`,
 ];
 
 export class StoreError extends Error {
@@ -628,6 +635,11 @@ export interface Store {
   releaseGateOutcome(gateId: string): void;
   /** Claim the gate's receipt before it is sent. True once per gate. */
   claimGateReceipt(gateId: string): boolean;
+  /**
+   * Claim the one "how to link" reply a sender linked to nobody gets in a room on a UTC day
+   * (`YYYY-MM-DD`). True once per sender, room and day; earlier days are forgotten.
+   */
+  claimLinkHint(sender: string, roomId: string, day: string): boolean;
   /**
    * The sweep's claim on a posted gate's receipt, for a gate the board says was decided
    * elsewhere: true once per gate, and false once any receipt is claimed (the answer path's
@@ -1162,6 +1174,16 @@ export function openStore(
           "UPDATE gate_events SET outcome_posted_at = ? WHERE gate_id = ? AND outcome_posted_at IS NULL",
         )
         .run(stamp(), gateId);
+      return result.changes === 1;
+    },
+
+    claimLinkHint(sender, roomId, day) {
+      db.query("DELETE FROM link_hints WHERE day < ?").run(day);
+      const result = db
+        .query(
+          "INSERT OR IGNORE INTO link_hints (sender, room_id, day) VALUES (?, ?, ?)",
+        )
+        .run(sender, roomId, day);
       return result.changes === 1;
     },
 

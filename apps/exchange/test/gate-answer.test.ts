@@ -10,6 +10,7 @@ import { createClient, type MatrixEvent } from "../src/appservice/index.ts";
 import {
   ALREADY_DECIDED_TEXT,
   IDENTITY_UNAVAILABLE_TEXT,
+  LINK_HINT_TEXT,
   createAccounts,
   createBoardChat,
   createBoardRooms,
@@ -215,7 +216,7 @@ function fakeBoard() {
 /** The default gate: a v1 gate with approve, request changes and reject, posted into ROOM. */
 const GATE = gateBody({ gateId: "gte_1" }) as unknown as GatePendingDelivery;
 
-function setup() {
+function setup(o: { now?: () => Date } = {}) {
   const t = tempStore();
   cleanups.push(t.cleanup);
   const hs = fakeHomeserver();
@@ -252,7 +253,7 @@ function setup() {
         fetch: board.fetch,
       }),
     log,
-    now: () => new Date("2026-11-12T12:00:00.000Z"),
+    now: o.now ?? (() => new Date("2026-11-12T12:00:00.000Z")),
   });
   const chat = createBoardChat({
     store: t.store,
@@ -519,7 +520,7 @@ describe("who may answer", () => {
     );
   });
 
-  test("a sender linked to nobody is ignored", async () => {
+  test("a sender linked to nobody is refused and told once how to link", async () => {
     const s = setup();
     s.posted();
     expect(await s.chat.answer(answer({ sender: STRANGER }))).toEqual({
@@ -528,7 +529,31 @@ describe("who may answer", () => {
     });
     expect(s.plane.assertions()).toEqual([]);
     expect(s.board.resolves).toEqual([]);
-    expect(s.said()).toEqual([]);
+    expect(s.replies()).toEqual([LINK_HINT_TEXT]);
+    expect(s.store.gateEvent("gte_1")?.outcomeClaimedAt).toBeNull();
+  });
+
+  test("the how-to-link reply goes at most once per person per room per day", async () => {
+    let at = new Date("2026-11-12T08:00:00.000Z");
+    const s = setup({ now: () => at });
+    s.posted();
+    await s.chat.answer(answer({ sender: STRANGER }));
+    await s.chat.answer(answer({ sender: STRANGER }));
+    at = new Date("2026-11-12T23:59:00.000Z");
+    await s.chat.answer(answer({ sender: STRANGER }));
+    expect(s.replies()).toEqual([LINK_HINT_TEXT]);
+    // Somebody else unlinked in the same room is told too.
+    await s.chat.answer(answer({ sender: `@other:${SERVER}` }));
+    expect(s.replies()).toEqual([LINK_HINT_TEXT, LINK_HINT_TEXT]);
+    // The next UTC day, once more.
+    at = new Date("2026-11-13T00:01:00.000Z");
+    await s.chat.answer(answer({ sender: STRANGER }));
+    expect(s.replies()).toEqual([
+      LINK_HINT_TEXT,
+      LINK_HINT_TEXT,
+      LINK_HINT_TEXT,
+    ]);
+    expect(s.board.resolves).toEqual([]);
   });
 
   test("an identity whose principal the plane no longer knows is linked to nobody", async () => {
@@ -537,7 +562,7 @@ describe("who may answer", () => {
     delete s.plane.principals[ANA_PRN];
     await s.deliver(answer());
     expect(s.board.resolves).toEqual([]);
-    expect(s.said()).toEqual([]);
+    expect(s.replies()).toEqual([LINK_HINT_TEXT]);
   });
 
   test("a plane that cannot be reached is said in the room, not read as unlinked", async () => {

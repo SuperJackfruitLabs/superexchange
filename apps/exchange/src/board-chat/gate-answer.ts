@@ -60,6 +60,13 @@ import type { ResolveInput, ResolveResult } from "./superpipeline.ts";
 export const IDENTITY_UNAVAILABLE_TEXT =
   "I cannot check who you are right now — the account service is unreachable. Nothing has changed; try again in a minute.";
 
+/**
+ * What a person linked to nobody is told when they answer a gate, at most once a day in a room:
+ * their answer cannot count until Accounts knows who they are, and only they can link.
+ */
+export const LINK_HINT_TEXT =
+  "Your answer didn't count: your Matrix account isn't linked to your Super Jackfruit account yet. To approve from chat, link it in SuperMessage: Settings → Account → Link to your Super Jackfruit account. A new link starts working 15 minutes after you make it.";
+
 /** What a person is told when the gate was already decided. */
 export const ALREADY_DECIDED_TEXT =
   "That was already decided — the board has it.";
@@ -110,6 +117,7 @@ export interface GateAnswersDeps {
     | "claimGateOutcome"
     | "releaseGateOutcome"
     | "claimGateReceipt"
+    | "claimLinkHint"
     | "releaseUnfinishedOutcomes"
   >;
   client: Pick<AppserviceClient, "sendEvent">;
@@ -202,8 +210,13 @@ export function createGateAnswers(deps: GateAnswersDeps): GateAnswers {
       return refused("identity-unavailable");
     }
     if (principal === null) {
-      // Somebody unlinked in the room is not an error: dropped, not answered.
+      // Not an error, and the answer is dropped. The person is told how to link once a day in
+      // this room: silence reads as a broken product, and more than once is noise.
       log(`board-chat: an answer to ${at} from an unlinked sender; ignored`);
+      const day = now().toISOString().slice(0, 10);
+      // Sent under the answer's own reply id, so a redelivered answer says it once; the store's
+      // claim is what keeps it to once a day.
+      if (store.claimLinkHint(sender, roomId, day)) await reply(LINK_HINT_TEXT);
       return refused("unlinked-sender");
     }
     if (principal.kind !== "human") {
