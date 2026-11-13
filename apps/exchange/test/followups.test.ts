@@ -988,12 +988,14 @@ describe("a waiting card raised long before it is posted", () => {
 });
 
 /** The event a message replies to, or null. */
-const replyTo = (content: Record<string, unknown> | undefined) =>
-  (
-    content?.["m.relates_to"] as
-      | { "m.in_reply_to"?: { event_id?: string } }
-      | undefined
-  )?.["m.in_reply_to"]?.event_id ?? null;
+function replyTo(content: Record<string, unknown> | undefined): string | null {
+  const relates = content?.["m.relates_to"];
+  if (typeof relates !== "object" || relates === null) return null;
+  if (!("m.in_reply_to" in relates)) return null;
+  const to = relates["m.in_reply_to"];
+  if (typeof to !== "object" || to === null || !("event_id" in to)) return null;
+  return typeof to.event_id === "string" ? to.event_id : null;
+}
 
 // ── attention.answer.v2 ─────────────────────────────────────────────────────
 
