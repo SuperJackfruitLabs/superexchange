@@ -8,6 +8,7 @@ It needs a SuperPipeline, the event relay, a Matrix homeserver and the organizat
 
 ## Docs
 
+- [Documentation](https://docs.superexchange.dev): how it works, running it, opting a board in, settings and limits ([llms-full.txt](https://docs.superexchange.dev/llms-full.txt))
 - [README](https://github.com/SuperJackfruitLabs/superexchange#readme): what it carries, how answers act, settings and how to run it
 - [Changelog](https://github.com/SuperJackfruitLabs/superexchange/blob/main/CHANGELOG.md): what each release contains
 

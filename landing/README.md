@@ -61,4 +61,5 @@ logo, copy `node_modules/@superjackfruit/frontdoor/src/brand/superexchange.svg` 
 **The link preview** (`public/og.png`, 1200×630) comes from the suite frame's shared template:
 `node scripts/og/render.mjs` in the frontdoor repository writes `superexchange.png`; copy it here.
 
-**No docs site yet.** The repository README is the documentation, so the page links there.
+**The docs live at `docs.superexchange.dev`** (`docs-site/`). The page itself still links the
+README; the frame's header and footer take their docs link from frontdoor.
