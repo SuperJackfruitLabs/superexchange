@@ -1,16 +1,23 @@
 name: Deploy public sites
-# Deploys superexchange.dev on every merge to main that touches it, with the organisation's
-# shared CLOUDFLARE_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable. The websites
-# environment only accepts main. Runs on the GitHub mirror only; forge builds the site in CI.
-# Run it by hand to redeploy.
+# Deploys superexchange.dev and docs.superexchange.dev on every merge to main that touches them,
+# with the organisation's shared CLOUDFLARE_API_TOKEN secret and CLOUDFLARE_ACCOUNT_ID variable.
+# The websites environment only accepts main. Runs on the GitHub mirror only; forge builds the
+# sites in CI. Run it by hand to redeploy one site or both.
 on:
   push:
     branches: [main]
     paths:
       - "landing/**"
+      - "docs-site/**"
       - "scripts/deploy-sites.sh"
       - ".github/workflows/sites.yml"
   workflow_dispatch:
+    inputs:
+      site:
+        description: Which site to deploy
+        type: choice
+        options: [all, landing, docs]
+        default: all
 permissions:
   contents: read
 concurrency:
@@ -25,9 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        # Astro 7 needs Node 22.23.4 or newer; a runner's cached 22 can be older.
+        with: { node-version: 24 }
       - name: Build and deploy
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: scripts/deploy-sites.sh landing
+          SITE: ${{ inputs.site || 'all' }}
+        run: scripts/deploy-sites.sh "$SITE"
