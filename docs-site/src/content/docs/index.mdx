@@ -1,0 +1,45 @@
+---
+title: SuperExchange
+description: The suite's communication server. A Matrix application service that carries SuperPipeline's board work into the board's chat room, and a person's answer back to the board.
+template: splash
+hero:
+  title: Board work in chat, and the answer back.
+  tagline: A gate, a question, a follow-up or a waiting card on a SuperPipeline board appears in that board's encrypted room. A person answers there, and the board hears it as that person.
+  actions:
+    - text: What it is
+      link: /what-it-is/
+      icon: right-arrow
+    - text: Run it
+      link: /operate/run/
+      variant: secondary
+    - text: Source
+      link: https://github.com/SuperJackfruitLabs/superexchange
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## One exchange, carried both ways
+
+<CardGrid>
+  <Card title="Out to the room">
+    The board's event arrives from the suite's event relay. SuperExchange makes the board's room
+    once, invites its people, waits for one of them to join, and posts the card exactly once,
+    encrypted.
+  </Card>
+  <Card title="Back to the board">
+    A person answers in the room. Accounts says who they are; only a person may answer. The
+    answer acts at SuperPipeline as that person, and one receipt is posted.
+  </Card>
+  <Card title="Nothing lost between">
+    A sweep asks every opted-in board what it still waits on: cards the relay missed are posted,
+    and a gate decided on the web or in `supi` is settled in chat with the same one receipt.
+  </Card>
+</CardGrid>
+
+SuperExchange is early: v0.0.2 runs in production, and no production board has moved to it yet.
+[Status and limits](/status/) says exactly what works and what is still owed by other products.
+
+For agents, the same docs are published as plain text: [`/llms.txt`](/llms.txt) indexes them, and
+[`/llms-full.txt`](/llms-full.txt) is every page in one file.
