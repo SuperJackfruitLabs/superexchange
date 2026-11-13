@@ -12,12 +12,12 @@ A post approved for **manual delivery** still owes the board its live link. That
 `delivery.pending` (`com.superjackfruit.superpipeline.delivery.pending.v1`) and is recorded once
 per gate.
 
-**The card** is one message, treaty's delivery.v2: the exact post, and two choices:
+**The card** is one message, treaty's [delivery.v2](https://treaty.superjackfruit.com/matrix/cards/superpipeline-delivery-v2/): the exact post, and two choices:
 
 - record the live link;
 - switch to automatic delivery, offered only when the whole post could be shown.
 
-**The answer** is a `dev.superpipeline.delivery.answer.v2` naming the gate and referencing that
+**The answer** is a [`dev.superpipeline.delivery.answer.v2`](https://treaty.superjackfruit.com/matrix/answers/superpipeline-delivery-answer-v2/) naming the gate and referencing that
 message. It is judged against what was recorded: an `https://` link within the limit, or automatic
 delivery only on a complete preview. It is carried as that person:
 
@@ -34,7 +34,7 @@ A card parked for a person (repeated failure, blocked, not authorised) arrives a
 `attention.pending` (`com.superjackfruit.superpipeline.attention.pending.v1`). It is recorded once
 per wait: board, card and wait id. A card that parks again is a new waiting card.
 
-**The card** is one message, treaty's attention.v2, offering three choices: resume here, resume at
+**The card** is one message, treaty's [attention.v2](https://treaty.superjackfruit.com/matrix/cards/superpipeline-attention-v2/), offering three choices: resume here, resume at
 an earlier stage, or archive.
 
 **Its age.** A card can be posted long after it was raised: the sweep finds a wait from before the
@@ -49,7 +49,7 @@ re-posted for an escalation says its age as of that post. The card carries no li
 showing where the card is now, such as its stage, its age in that stage or its attempt, comes from
 the board, read when it is shown.
 
-**The answer** is a `dev.superpipeline.attention.answer.v2` naming that wait and referencing that
+**The answer** is a [`dev.superpipeline.attention.answer.v2`](https://treaty.superjackfruit.com/matrix/answers/superpipeline-attention-answer-v2/) naming that wait and referencing that
 message, carried as that person:
 
 ```http
@@ -64,7 +64,7 @@ POST /v1/boards/:boardId/cards/:cardId/archive
 resume needs an instruction for the next attempt, at most 2730 characters.
 
 **One receipt** settles the card, and only one: a line in reply to the card ("Resumed by Ana — the
-board has it."), and `dev.superpipeline.attention.outcome.v1` referencing the card's message. An
+board has it."), and [`dev.superpipeline.attention.outcome.v1`](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-attention-outcome-v1/) referencing the card's message. An
 updated client closes the card by the outcome and draws the receipt in place of its choices. The
 reply is what ties the line to its card in any other client. In an encrypted room all three are
 sent encrypted.

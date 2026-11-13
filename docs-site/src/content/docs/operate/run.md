@@ -21,10 +21,11 @@ needs is present and well formed.
 
 ### The event relay
 
-treaty's relay must deliver SuperPipeline's board events to `POST /v1/relay/events`, signed with
+[Treaty's relay](https://treaty.superjackfruit.com/relay/) must deliver SuperPipeline's board events to `POST /v1/relay/events`, signed with
 the secret SuperExchange holds as `TREATY_RELAY_DELIVERY_SECRET`. SuperExchange subscribes to
 `gate.pending`, `elicitation.pending`, `delivery.pending`, `attention.pending` and the seven
-board-room notices ([Events carried](/reference/events/)).
+board-room notices ([Events carried](/reference/events/)). How the relay delivers, retries and
+signs is on [Treaty's relay page](https://treaty.superjackfruit.com/relay/#delivery-and-retries).
 
 ### Accounts (the organization plane)
 

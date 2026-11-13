@@ -32,7 +32,8 @@ it.
 
 Each delivery is a CloudEvent in HTTP binary mode, signed in `x-treaty-signature` over the
 timestamp, the event id and the exact body, and checked with treaty's `verifyDelivery` before the
-data is read. A body over 256 KiB is refused.
+data is read ([how a subscriber verifies](https://treaty.superjackfruit.com/relay/#verifying-a-delivery)).
+A body over 256 KiB is refused.
 
 | Delivery | Answer |
 | --- | --- |
