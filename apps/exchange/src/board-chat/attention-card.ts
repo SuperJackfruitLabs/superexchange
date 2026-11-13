@@ -10,9 +10,16 @@
  * held until a person has joined, fail closed on encryption, claimed before the send, one
  * transaction id on every try.
  *
- * Its receipt is a prose line and `dev.superpipeline.attention.outcome.v1` pointing at the card's
- * message (`attentionOutcomeContent`). One per wait: the answer path claims it
- * (`claimAttentionReceipt`) and the sweep claims it (`settleAttentionEvent`) on the same column.
+ * A card posted long after it was raised (the sweep finding a wait from before the board was opted
+ * in, a held card nobody joined to read) says so: its summary leads with when it was raised and how
+ * long before the post that was (`attentionCardContent`), so the agent's words and the failure
+ * count read as of then, not as news.
+ *
+ * Its receipt is a prose line in reply to the card's message, and
+ * `dev.superpipeline.attention.outcome.v1` pointing at it (`attentionOutcomeContent`). The outcome
+ * is what an updated client closes the card by; the reply is what ties the line to its card in any
+ * client. One per wait: the answer path claims it (`claimAttentionReceipt`) and the sweep claims it
+ * (`settleAttentionEvent`) on the same column.
  *
  * Not ported: the hub's fleet Live Activity (`onAttentionPosted`), which is AgentPod's.
  */
@@ -24,6 +31,7 @@ import {
   attentionOutcomeContent,
   attentionV2Content,
   isAttentionPending,
+  type AttentionPendingDelivery,
 } from "@superjackfruitlabs/treaty-matrix-events";
 import type {
   AttentionEvent,
@@ -79,6 +87,72 @@ export function attentionOffer(
   }));
 }
 
+/** A waiting card raised at least this long before it is posted says when it was raised. */
+export const RAISED_LINE_AFTER_MS = 60 * 60 * 1000;
+
+const MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const two = (n: number) => String(n).padStart(2, "0");
+
+/** How long before the post, in words: hours below two days, then days. */
+function ageWords(ms: number): string {
+  const hours = Math.floor(ms / 3_600_000);
+  if (hours < 48) return hours === 1 ? "1 hour" : `${hours} hours`;
+  return `${Math.floor(hours / 24)} days`;
+}
+
+/**
+ * The sentence a waiting card leads with when it was raised an hour or more before `postedAt`:
+ * "Raised 6 Nov, 06:32 UTC, 7 days before this card was posted; what it says is as of then." Null
+ * when the raise is recent, unknown (`ts` absent or unreadable) or after the post. The time is UTC,
+ * said as UTC: the service does not know the reader's zone.
+ */
+export function raisedLine(ts: unknown, postedAt: Date): string | null {
+  if (typeof ts !== "string") return null;
+  const raised = Date.parse(ts);
+  if (!Number.isFinite(raised)) return null;
+  const age = postedAt.getTime() - raised;
+  if (!(age >= RAISED_LINE_AFTER_MS)) return null;
+  const at = new Date(raised);
+  const year =
+    at.getUTCFullYear() === postedAt.getUTCFullYear()
+      ? ""
+      : ` ${at.getUTCFullYear()}`;
+  const when = `${at.getUTCDate()} ${MONTHS[at.getUTCMonth()]}${year}, ${two(at.getUTCHours())}:${two(at.getUTCMinutes())} UTC`;
+  return `Raised ${when}, ${ageWords(age)} before this card was posted; what it says is as of then.`;
+}
+
+/**
+ * A waiting card's message as posted at `postedAt`: treaty's attention.v2, its summary led by
+ * `raisedLine` when the card was raised an hour or more before. Built by treaty either way; only
+ * the summary it is given differs, so the prose and the client's summary field both say it.
+ */
+export function attentionCardContent(
+  d: AttentionPendingDelivery,
+  postedAt: Date,
+): Record<string, unknown> {
+  const raised = raisedLine(d.ts, postedAt);
+  if (raised === null) return attentionV2Content(d);
+  const said =
+    typeof d.summary === "string" && d.summary.trim() !== ""
+      ? `${raised} ${d.summary}`
+      : raised;
+  return attentionV2Content({ ...d, summary: said });
+}
+
 export type AttentionPostOutcome =
   | CardPostOutcome
   | {
@@ -102,6 +176,8 @@ export interface AttentionPostDeps extends Omit<CardPostDeps, "store"> {
     | "boardRoom"
     | "boardRoomByRoomId"
   >;
+  /** The clock a card's age is read against when it is posted. */
+  now?: () => Date;
 }
 
 /** Post one delivered waiting card. Run only in board chat's queue. */
@@ -133,7 +209,7 @@ export async function postAttention(
       store.claimAttentionEvent(wait, roomId, attentionOffer(d)),
     recordPosted: (eventId) => store.recordAttentionPosted(wait, eventId),
     txnId: attentionTxnId(wait, "prose"),
-    content: () => attentionV2Content(d),
+    content: () => attentionCardContent(d, (deps.now ?? (() => new Date()))()),
   });
 }
 
@@ -158,8 +234,9 @@ export function attentionReceiptBody(
 }
 
 /**
- * Send a waiting card's receipt, already claimed: the prose line (unless `prose` is false), then
- * `attention.outcome.v1` at the card's message, each under its own transaction id.
+ * Send a waiting card's receipt, already claimed: the prose line in reply to the card's message
+ * (unless `prose` is false), then `attention.outcome.v1` at that message, each under its own
+ * transaction id.
  */
 export async function sendAttentionReceipt(
   sender: Pick<RoomSender, "sendEvent">,
@@ -181,6 +258,9 @@ export async function sendAttentionReceipt(
       {
         msgtype: "m.text",
         body: attentionReceiptBody(decision, card.options, decidedBy),
+        ...(card.eventId
+          ? { "m.relates_to": { "m.in_reply_to": { event_id: card.eventId } } }
+          : {}),
       },
     );
   }

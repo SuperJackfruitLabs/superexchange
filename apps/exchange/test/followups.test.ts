@@ -14,7 +14,12 @@ import {
   type AttentionPendingDelivery,
   type DeliveryPendingDelivery,
 } from "@superjackfruitlabs/treaty-matrix-events";
-import { createClient, type MatrixEvent } from "../src/appservice/index.ts";
+import {
+  ENCRYPTED_EVENT_TYPE,
+  createClient,
+  type MatrixEvent,
+  type RoomCrypto,
+} from "../src/appservice/index.ts";
 import {
   ATTENTION_PENDING_V1,
   DELIVERY_PENDING_V1,
@@ -25,6 +30,7 @@ import {
   AccountsError,
   answerAttentionAtSuperpipeline,
   answerFollowupAtSuperpipeline,
+  attentionCardContent,
   attentionOffer,
   attentionTxnId,
   createAccounts,
@@ -38,6 +44,7 @@ import {
   followupTxnId,
   intakeAttention,
   intakeFollowup,
+  raisedLine,
   sweepAttention,
   sweepFollowups,
 } from "../src/board-chat/index.ts";
@@ -180,10 +187,42 @@ const KEY: WaitKey = {
   waitId: "wait_0123456789abcdef",
 };
 
+/** Five minutes after `blocked()` was raised: a card posted then is not old. */
+const SOON = "2026-11-08T10:05:00.000Z";
+
+/** Encryption without a machine: the envelope carries the event, so a test can read it back. */
+function fakeCrypto() {
+  const encrypted: Array<{
+    eventType: string;
+    content: Record<string, unknown>;
+  }> = [];
+  const crypto: RoomCrypto = {
+    async encrypt(_roomId, _members, eventType, content) {
+      encrypted.push({ eventType, content });
+      return {
+        algorithm: "m.megolm.v1.aes-sha2",
+        session_id: "outbound",
+        ciphertext: JSON.stringify({ type: eventType, content }),
+      };
+    },
+    async decrypt() {
+      return null;
+    },
+  };
+  return { crypto, encrypted };
+}
+
 function setup({
   joined = true,
   plaintextRooms = true,
-}: { joined?: boolean; plaintextRooms?: boolean } = {}) {
+  clock = { now: new Date(SOON) },
+  crypto = null as RoomCrypto | null,
+}: {
+  joined?: boolean;
+  plaintextRooms?: boolean;
+  clock?: { now: Date };
+  crypto?: RoomCrypto | null;
+} = {}) {
   const t = tempStore();
   cleanups.push(t.cleanup);
   const store = t.store;
@@ -207,7 +246,7 @@ function setup({
   const sender = createRoomSender({
     store,
     client,
-    crypto: null,
+    crypto,
     plaintextRooms,
   });
   const accounts = createAccounts({
@@ -251,6 +290,7 @@ function setup({
     followups,
     attention,
     log,
+    now: () => clock.now,
   });
   for (const [boardId, roomId] of [
     [BOARD, ROOM],
@@ -266,7 +306,7 @@ function setup({
       boardId,
       roomId,
       `superexchange_board_${boardId}`,
-      false,
+      crypto !== null,
     );
     store.recordMembership(roomId, SPEAKER, "join");
     store.recordMembership(roomId, ANA, joined ? "join" : "invite");
@@ -876,6 +916,85 @@ describe("a waiting card is posted into its board's room", () => {
   });
 });
 
+describe("a waiting card raised long before it is posted", () => {
+  const LINE =
+    "Raised 8 Nov, 10:00 UTC, 5 days before this card was posted; what it says is as of then.";
+
+  test("leads its summary with when it was raised and how long before the post, in the prose too", async () => {
+    const s = setup({ clock: { now: new Date("2026-11-13T10:30:00.000Z") } });
+    await s.wait();
+    const content = s.hs.sent[0]?.content ?? {};
+    expect(content).toEqual(
+      attentionV2Content({ ...blocked(), summary: `${LINE} Staging DB down` }),
+    );
+    expect(content.summary).toBe(`${LINE} Staging DB down`);
+    expect(String(content.body)).toContain(`${LINE} Staging DB down`);
+    // Still treaty's card, answerable as before: the offer recorded is the same.
+    expect(s.store.attentionEvent(KEY)?.options).toEqual(
+      attentionOffer(blocked()),
+    );
+  });
+
+  test("raised under an hour before, it is treaty's card as it is; from an hour, it says so", () => {
+    const at = (iso: string) => attentionCardContent(blocked(), new Date(iso));
+    expect(at("2026-11-08T10:59:59.999Z")).toEqual(
+      attentionV2Content(blocked()),
+    );
+    expect(at("2026-11-08T11:00:00.000Z").summary).toBe(
+      "Raised 8 Nov, 10:00 UTC, 1 hour before this card was posted; what it says is as of then. Staging DB down",
+    );
+  });
+
+  test("with no summary the line is the summary; an unknown, unreadable or later raise says nothing", () => {
+    const late = new Date("2026-11-13T10:30:00.000Z");
+    expect(attentionCardContent(blocked({ summary: null }), late).summary).toBe(
+      LINE,
+    );
+    for (const ts of [undefined, "", "not a time", "2026-11-14T00:00:00Z"]) {
+      const d = blocked();
+      if (ts === undefined) delete d.ts;
+      else d.ts = ts;
+      expect(attentionCardContent(d, late)).toEqual(attentionV2Content(d));
+    }
+  });
+
+  test("says hours below two days, then days, and the year when it is not the post's", () => {
+    const raised = "2026-11-08T10:00:00.000Z";
+    const line = (iso: string) => raisedLine(raised, new Date(iso));
+    expect(line("2026-11-10T09:59:00.000Z")).toContain(", 47 hours before");
+    expect(line("2026-11-10T10:00:00.000Z")).toContain(", 2 days before");
+    expect(raisedLine("2025-12-31T23:05:00.000Z", new Date(SOON))).toMatch(
+      /^Raised 31 Dec 2025, 23:05 UTC, 311 days before/,
+    );
+  });
+
+  test("a held card says its age as of the join that posts it", async () => {
+    const clock = { now: new Date(SOON) };
+    const s = setup({ joined: false, clock });
+    intakeAttention(s.store, blocked());
+    expect((await s.chat.postAttention(KEY)).status).toBe("held");
+    clock.now = new Date("2026-11-08T13:20:00.000Z");
+    await s.deliver({
+      type: "m.room.member",
+      room_id: ROOM,
+      state_key: ANA,
+      sender: ANA,
+      content: { membership: "join" },
+    });
+    expect(s.hs.sent[0]?.content.summary).toBe(
+      "Raised 8 Nov, 10:00 UTC, 3 hours before this card was posted; what it says is as of then. Staging DB down",
+    );
+  });
+});
+
+/** The event a message replies to, or null. */
+const replyTo = (content: Record<string, unknown> | undefined) =>
+  (
+    content?.["m.relates_to"] as
+      | { "m.in_reply_to"?: { event_id?: string } }
+      | undefined
+  )?.["m.in_reply_to"]?.event_id ?? null;
+
 // ── attention.answer.v2 ─────────────────────────────────────────────────────
 
 describe("attention.answer.v2", () => {
@@ -944,6 +1063,44 @@ describe("attention.answer.v2", () => {
       "Archived by Ana — the board has it.",
       "Archived by Ana — the board has it.",
     ]);
+  });
+
+  test("its receipt line replies to the card it settles, beside the outcome at it", async () => {
+    const s = setup();
+    const ev = await s.wait();
+    await s.deliver(attentionAnswer(ev));
+    const line = s.hs.sent.find(
+      (e) => e.txnId === attentionTxnId(KEY, "outcome.prose"),
+    );
+    expect(line?.content).toEqual({
+      msgtype: "m.text",
+      body: "Resumed by Ana — the board has it.",
+      "m.relates_to": { "m.in_reply_to": { event_id: ev } },
+    });
+    expect(s.outcomes(ATTENTION_OUTCOME_TYPE)).toEqual([
+      attentionOutcomeContent({ ...KEY, eventId: ev }, "resume_here", "Ana"),
+    ]);
+  });
+
+  test("in an encrypted room, the card, the receipt line and the outcome are all sent encrypted", async () => {
+    const c = fakeCrypto();
+    const s = setup({ crypto: c.crypto, plaintextRooms: false });
+    const ev = await s.wait();
+    await s.deliver(attentionAnswer(ev));
+    expect(s.hs.sent.map((e) => e.type)).toEqual([
+      ENCRYPTED_EVENT_TYPE,
+      ENCRYPTED_EVENT_TYPE,
+      ENCRYPTED_EVENT_TYPE,
+    ]);
+    expect(c.encrypted.map((e) => e.eventType)).toEqual([
+      "m.room.message",
+      "m.room.message",
+      ATTENTION_OUTCOME_TYPE,
+    ]);
+    expect(replyTo(c.encrypted[1]?.content)).toBe(ev);
+    expect(c.encrypted[2]?.content).toEqual(
+      attentionOutcomeContent({ ...KEY, eventId: ev }, "resume_here", "Ana"),
+    );
   });
 
   test("a repeated answer leaves one receipt", async () => {
@@ -1184,6 +1341,28 @@ describe("the waiting-card sweep", () => {
       s.store.attentionEvent({ ...KEY, waitId: "wait_new" })?.postedAt,
     ).not.toBeNull();
     expect((await sweep(s, { [BOARD]: [again] })).settled).toBe(0);
+  });
+
+  test("a card that left its stage or was resumed elsewhere is closed once, its line in reply to it", async () => {
+    const s = setup();
+    const ev = await s.wait();
+    expect((await sweep(s, { [BOARD]: [] })).settled).toBe(1);
+    expect((await sweep(s, { [BOARD]: [] })).settled).toBe(0);
+    const lines = s.hs.sent.filter(
+      (e) => e.txnId === attentionTxnId(KEY, "outcome.prose"),
+    );
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.content.body).toBe(
+      "This card is no longer waiting — it was settled on the board.",
+    );
+    expect(replyTo(lines[0]?.content)).toBe(ev);
+    expect(s.outcomes(ATTENTION_OUTCOME_TYPE)).toEqual([
+      attentionOutcomeContent(
+        { ...KEY, eventId: ev },
+        "settled_elsewhere",
+        null,
+      ),
+    ]);
   });
 
   test("a card answered in chat is never closed after: one receipt", async () => {
