@@ -1,0 +1,17 @@
+// superexchange.dev: a Worker with static assets and no script.
+//
+// Not a classic Pages project: wrangler 4.147 no longer creates those ("Cloudflare
+// Pages, now part of Cloudflare Workers"). The custom domains are declared here, so
+// `wrangler deploy` attaches them; no dashboard step. Deployed by
+// scripts/deploy-sites.sh, from .github/workflows/sites.yml on merge to main.
+{
+  "name": "superexchange-site",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./dist", "not_found_handling": "404-page" },
+  "routes": [
+    { "pattern": "superexchange.dev", "custom_domain": true },
+    { "pattern": "www.superexchange.dev", "custom_domain": true }
+  ],
+  "workers_dev": false,
+  "preview_urls": false
+}

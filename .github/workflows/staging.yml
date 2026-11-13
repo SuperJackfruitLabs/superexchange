@@ -6,9 +6,14 @@ name: staging
 #
 # Off until the host side exists: the job runs only when the repository variable STAGING_DEPLOY
 # is `on`, beside STAGING_HOST and the STAGING_SSH_KEY and STAGING_KNOWN_HOSTS secrets.
+# A push that only touches the landing page deploys nothing here: sites.yml deploys that.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "landing/**"
+      - "scripts/deploy-sites.sh"
+      - ".github/workflows/sites.yml"
 
 permissions:
   contents: read

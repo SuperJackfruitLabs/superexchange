@@ -1,0 +1,42 @@
+---
+/**
+ * Canonical URL, icon, and the tags a link preview is built from.
+ *
+ * One component rather than a block per page: the two pages here share no layout, and
+ * link-preview tags copied twice drift two ways. The canonical URL comes from `Astro.site` and
+ * the page's own path, so it cannot name another page. og:image is absolute because several
+ * unfurlers ignore a relative one. The 404, served at whatever path was mistyped, passes
+ * `canonical={false}`. The image is public/og.png, 1200×630, rendered by the suite frame's
+ * shared template (frontdoor scripts/og/render.mjs), so every product's preview reads as one suite.
+ */
+interface Props {
+  title: string;
+  description: string;
+  canonical?: boolean;
+}
+
+const { title, description, canonical: hasCanonical = true } = Astro.props;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+const image = new URL('/og.png', Astro.site).href;
+const imageAlt = 'SuperExchange — the board’s decisions, answered in chat';
+---
+
+{hasCanonical && <link rel="canonical" href={canonical} />}
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="alternate" type="text/plain" title="llms.txt" href="/llms.txt" />
+
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="SuperExchange" />
+<meta property="og:title" content={title} />
+<meta property="og:description" content={description} />
+{hasCanonical && <meta property="og:url" content={canonical} />}
+<meta property="og:image" content={image} />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:image:alt" content={imageAlt} />
+
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content={title} />
+<meta name="twitter:description" content={description} />
+<meta name="twitter:image" content={image} />
+<meta name="twitter:image:alt" content={imageAlt} />
