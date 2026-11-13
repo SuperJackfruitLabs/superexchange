@@ -10,7 +10,7 @@ in the board's room and carries a person's answer back.
 
 A `gate.pending` from the relay, for an opted-in and enabled board, is recorded once and posted
 after a person has joined the room (see [Board rooms](/board-chat/rooms/)). The post is two
-messages, both built by treaty: the gate.v2 prose message and the gate card. Gates not yet posted
+messages, both built by treaty: the [gate.v2](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate-v2/) prose message and the [gate card](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate/). Gates not yet posted
 are tried again at boot, when a person joins, and by the [sweep](/board-chat/sweeps/).
 
 ## When an answer counts
@@ -18,7 +18,7 @@ are tried again at boot, when a person joins, and by the [sweep](/board-chat/swe
 Answering a gate is the one place a message in a room becomes authority somewhere else, so every
 step fails closed. An answer counts only when:
 
-1. it is a gate decision (`dev.superpipeline.gate.decision.v1` or `.v2`, read by treaty's
+1. it is a gate decision ([`dev.superpipeline.gate.decision.v1`](https://treaty.superjackfruit.com/matrix/answers/superpipeline-gate-decision-v1/) or [`.v2`](https://treaty.superjackfruit.com/matrix/answers/superpipeline-gate-decision-v2/), read by treaty's
    `parseGateDecision`), an `m.reference` to what it answers;
 2. its sender is outside SuperExchange's namespace (`@superexchange_*`);
 3. it was said in a board room SuperExchange owns;
@@ -50,7 +50,7 @@ A second answer to a gate already decided is told "That was already decided — 
 
 ## The receipt
 
-One receipt per gate: treaty's prose line and `dev.superpipeline.gate.outcome.v1`, pointing at the
+One receipt per gate: treaty's prose line and [`dev.superpipeline.gate.outcome.v1`](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-gate-outcome-v1/), pointing at the
 card, which a client closes the card by. It is sent in either of two cases, whichever comes first:
 
 - a person's answer in chat, once the board took it;

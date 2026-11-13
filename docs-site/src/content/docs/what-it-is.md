@@ -49,7 +49,7 @@ SuperPipeline remains a board without SuperExchange: its gates are still decided
 `supi`. SuperMessage remains a plain Matrix client for any homeserver. AgentPod's puppeting works
 with SuperExchange absent.
 
-SuperExchange itself needs a SuperPipeline, the event relay, a Matrix homeserver and the
+SuperExchange itself needs a SuperPipeline, the [event relay](https://treaty.superjackfruit.com/relay/), a Matrix homeserver and the
 organization plane (Accounts). It needs no AgentPod fleet.
 
 ## What it is made of
@@ -58,3 +58,6 @@ One Bun service (`apps/exchange`) with a SQLite store under its data directory, 
 crypto store beside it. End-to-end encryption uses `@matrix-org/matrix-sdk-crypto-nodejs`. The
 board-room events come from treaty's `treaty-matrix-events`, and the relay's signed deliveries are
 checked with treaty's `treaty-cloudevents`. It is MIT licensed.
+
+**Contracts: [Treaty](https://treaty.superjackfruit.com)**, the suite's contracts as code: every
+event SuperExchange takes in and every Matrix event it posts or reads has a page there.

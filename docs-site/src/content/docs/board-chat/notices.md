@@ -12,13 +12,13 @@ concerns. Every message is built by treaty.
 
 | Event | What the room sees |
 | --- | --- |
-| `decision.reminded` | treaty's notice in reply to the waiting card (a gate, question, follow-up or waiting card). Overdue checks have no card: their reminder stands alone. |
-| `decision.escalated` | The workspace's owners and admins are invited, then the notice in reply to the card. See below. |
-| `gate.approval_recorded` | A quorum gate's progress ("Approved by Ana — 1 of 2. Waiting for 1 more.") in reply to the gate, and `dev.agentpod.gate.progress.v2`. The count is recorded on the gate and never walked back. |
-| `decision.released` | In reply to the gate, settled or not (it follows a held approval's receipt), and `dev.agentpod.decision.released.v2`. |
-| `decision.pulled_back` | In reply to the gate, and `dev.agentpod.decision.pulled_back.v2`. |
-| `check.failed` | A line in the room, in reply to the open checks.waiting card for that card and stage when there is one, and `dev.agentpod.check.failed.v2`. A failure that sent the card back closes that card. |
-| `check.overridden` | The same, with `dev.agentpod.check.overridden.v2`. |
+| [`decision.reminded`](https://treaty.superjackfruit.com/events/decision-timeout-v1/) | treaty's notice in reply to the waiting card (a gate, question, follow-up or waiting card). Overdue checks have no card: their reminder stands alone. |
+| [`decision.escalated`](https://treaty.superjackfruit.com/events/decision-timeout-v1/) | The workspace's owners and admins are invited, then the notice in reply to the card. See below. |
+| [`gate.approval_recorded`](https://treaty.superjackfruit.com/events/gate-approval-recorded-v1/) | A quorum gate's progress ("Approved by Ana — 1 of 2. Waiting for 1 more.") in reply to the gate, and [`dev.agentpod.gate.progress.v2`](https://treaty.superjackfruit.com/matrix/notices/agentpod-gate-progress-v2/). The count is recorded on the gate and never walked back. |
+| [`decision.released`](https://treaty.superjackfruit.com/events/decision-released-v1/) | In reply to the gate, settled or not (it follows a held approval's receipt), and [`dev.agentpod.decision.released.v2`](https://treaty.superjackfruit.com/matrix/notices/agentpod-decision-released-v2/). |
+| [`decision.pulled_back`](https://treaty.superjackfruit.com/events/decision-pulled-back-v1/) | In reply to the gate, and [`dev.agentpod.decision.pulled_back.v2`](https://treaty.superjackfruit.com/matrix/notices/agentpod-decision-pulled-back-v2/). |
+| [`check.failed`](https://treaty.superjackfruit.com/events/check-failed-v1/) | A line in the room, in reply to the open checks.waiting card for that card and stage when there is one, and [`dev.agentpod.check.failed.v2`](https://treaty.superjackfruit.com/matrix/notices/agentpod-check-failed-v2/). A failure that sent the card back closes that card. |
+| [`check.overridden`](https://treaty.superjackfruit.com/events/check-overridden-v1/) | The same, with [`dev.agentpod.check.overridden.v2`](https://treaty.superjackfruit.com/matrix/notices/agentpod-check-overridden-v2/). |
 
 A notice about a card SuperExchange never posted, or one already settled (for a reminder, an
 escalation or progress), is answered `ignored` and never said. Who did something is named by

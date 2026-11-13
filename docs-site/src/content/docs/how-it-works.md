@@ -8,10 +8,10 @@ fullest, so this page follows one gate.
 
 ## 1. The board's event reaches SuperExchange
 
-SuperPipeline publishes `gate.pending` to the suite's event relay. The relay delivers it to
+SuperPipeline publishes [`gate.pending`](https://treaty.superjackfruit.com/events/gate-pending-v1/) to the suite's [event relay](https://treaty.superjackfruit.com/relay/). The relay delivers it to
 SuperExchange's `POST /v1/relay/events` as a CloudEvent in HTTP binary mode, signed in
 `x-treaty-signature` with the secret the two share (`TREATY_RELAY_DELIVERY_SECRET`). SuperExchange
-checks the signature with treaty's `verifyDelivery` before it reads the body.
+checks the signature with treaty's `verifyDelivery` before it reads the body ([how a subscriber verifies](https://treaty.superjackfruit.com/relay/#verifying-a-delivery)).
 
 It keeps the event only when the board is **opted in and enabled** in its own store. An operator
 does that through SuperExchange's own API: see [Opt a board in](/operate/boards/). An event for any
@@ -80,5 +80,5 @@ receipt whichever path settles it. See [The sweeps](/board-chat/sweeps/).
 | The event relay | Delivers SuperPipeline's events, signed |
 | Accounts (the organization plane) | Who a Matrix sender is, the assertion that carries them, and SuperExchange's own service token |
 | The Matrix homeserver | The rooms; it calls SuperExchange with each transaction under the appservice registration |
-| treaty | The board-room event contract, the room names and the relay's signature |
+| [Treaty](https://treaty.superjackfruit.com) | The board-room event contract, the room names and the relay's signature |
 | SuperExchange's store | Opted-in boards, rooms, memberships, what was posted and settled, and the speaker's device |

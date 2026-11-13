@@ -16,7 +16,7 @@ Both arrive as `elicitation.pending` (CloudEvents type
 
 A question for an opted-in, enabled board is recorded once and posted like a gate: held until a
 person has joined, encrypted where the room is, exactly once. It is one message, built by treaty:
-the question.v2 prose with the v1 card (`dev.superpipeline.elicitation`) inside it.
+the [question.v2](https://treaty.superjackfruit.com/matrix/cards/superpipeline-question-v2/) prose with the v1 card ([`dev.superpipeline.elicitation`](https://treaty.superjackfruit.com/matrix/cards/superpipeline-elicitation/)) inside it.
 
 **An approval request is kept only for this service's own workspace.** Because it carries every
 argument in full, one is kept only when the board's `orgId` is the workspace of SuperExchange's own
@@ -30,7 +30,7 @@ gates).
 
 ### A question.answer.v2
 
-A `dev.superpipeline.question.answer.v2` naming its question and referencing the message that asked
+A [`dev.superpipeline.question.answer.v2`](https://treaty.superjackfruit.com/matrix/answers/superpipeline-question-answer-v2/) naming its question and referencing the message that asked
 it. It is judged against what was recorded when the question was posted: an option it offered,
 with the input that option asks for, bound to the subject it showed. Approving an incomplete
 preview, or approving after expiry, is refused.
