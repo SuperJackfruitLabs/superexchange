@@ -5,6 +5,8 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+## v0.0.3 — 2026-11-13
+
 - A waiting card raised an hour or more before it is posted says when it was raised and how long
   before the post that was, at the head of its summary ("Raised 6 Nov, 06:32 UTC, 7 days before
   this card was posted; what it says is as of then."), in the prose and in the card's summary
