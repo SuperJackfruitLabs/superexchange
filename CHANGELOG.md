@@ -5,6 +5,12 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+- A waiting card raised an hour or more before it is posted says when it was raised and how long
+  before the post that was, at the head of its summary ("Raised 6 Nov, 06:32 UTC, 7 days before
+  this card was posted; what it says is as of then."), in the prose and in the card's summary
+  field. A card re-posted for an escalation says it as of that post.
+- A waiting card's receipt line is a reply to the card it settles, so any client shows which card
+  it closed. The structured outcome at the card is unchanged.
 - No change in behaviour. Lint is type-aware (oxlint with oxlint-tsgolint) and held by a
   per-rule ratchet; the architecture test also refuses runtime import cycles and files over
   1,000 lines; the store is split into a migrations list, a model and one module per table

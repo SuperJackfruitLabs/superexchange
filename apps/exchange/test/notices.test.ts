@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import {
+  ATTENTION_V2_SUITE_TYPE,
   CHECKS_WAITING_TYPE,
   CHECK_FAILED_TYPE,
   CHECK_OVERRIDDEN_TYPE,
@@ -13,6 +14,7 @@ import {
   GATE_EVENT_TYPE,
   GATE_PROGRESS_TYPE,
   GATE_PULL_BACK_V2_SUITE_TYPE,
+  attentionV2Content,
   checkFailedBody,
   checkOverriddenBody,
   decisionNoticeContent,
@@ -449,6 +451,7 @@ function setup({
       reads,
     },
     log,
+    ...(clock ? { now: () => clock.now } : {}),
   });
   for (const [boardId, roomId] of [
     [BOARD, ROOM],
@@ -1037,6 +1040,41 @@ describe("an invited admin who joins", () => {
       },
     });
     expect(s.board.calls).toEqual([]);
+  });
+
+  test("gets a waiting card moved below, saying how long before this post it was raised", async () => {
+    const clock = { now: new Date("2026-11-12T10:05:00.000Z") };
+    const s = setup({ clock });
+    intakeAttention(s.store, attentionBody());
+    const key = {
+      boardId: BOARD,
+      cardId: CARD,
+      waitId: "wait_0123456789abcdef",
+    };
+    const first = await s.chat.postAttention(key);
+    if (first.status !== "posted") throw new Error(first.status);
+    // Posted five minutes after it was raised: nothing to say about its age.
+    expect(
+      s.hs.sent.find(
+        (e) => e.content.suite_event_type === ATTENTION_V2_SUITE_TYPE,
+      )?.content,
+    ).toEqual(attentionV2Content(attentionBody()));
+    await s.notice(
+      DECISION_ESCALATED_V1,
+      escalation({ decisionKind: "attention", decisionId: key.waitId }),
+    );
+    s.state.pending.attention = [attentionBody()];
+    clock.now = new Date("2026-11-14T10:00:00.000Z");
+    const before = s.hs.sent.length;
+    await s.deliver(join(BEA));
+    const moved = s.hs.sent
+      .slice(before)
+      .filter((e) => e.content.suite_event_type === ATTENTION_V2_SUITE_TYPE);
+    expect(moved).toHaveLength(1);
+    expect(moved[0]?.content.summary).toBe(
+      "Raised 12 Nov, 10:00 UTC, 2 days before this card was posted; what it says is as of then. Staging DB down",
+    );
+    expect(s.store.attentionEvent(key)?.eventId).not.toBe(first.eventId);
   });
 
   test("a card the board now offers differently stays where it was, and gets the notice again", async () => {

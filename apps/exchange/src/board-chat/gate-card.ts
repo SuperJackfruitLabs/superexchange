@@ -491,6 +491,7 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
       log(`board-chat: ${at} held until a person joins the room of ${boardId}`);
     },
     log,
+    now,
   };
   const postF = (gateId: string) =>
     enqueue(() => postFollowup(cardDeps, gateId));
@@ -550,6 +551,7 @@ export function createBoardChat(deps: BoardChatDeps): BoardChat {
     speaker: rooms.speaker,
     ...(n.reads ? { reads: n.reads } : {}),
     log,
+    now,
   };
   const postN = (noticeId: string) =>
     enqueue(() => postNotice(noticeDeps, noticeId));

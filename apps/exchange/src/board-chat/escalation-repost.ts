@@ -29,7 +29,6 @@ import {
   ELICITATION_REQUEST_CONTENT_KEY,
   GATE_EVENT_TYPE,
   GATE_REQUEST_CONTENT_KEY,
-  attentionV2Content,
   boundedQuestion,
   decisionNoticeContent,
   deliveryV2Content,
@@ -51,7 +50,7 @@ import type {
   Notice,
   Store,
 } from "../store/index.ts";
-import { attentionOffer } from "./attention-card.ts";
+import { attentionCardContent, attentionOffer } from "./attention-card.ts";
 import { followupOffer } from "./followup-card.ts";
 import { gateOffer } from "./gate-offer.ts";
 import {
@@ -107,6 +106,8 @@ export interface RepostDeps {
   /** What the board waits on now. Absent: only the notices are posted again. */
   reads?: Partial<RepostReads>;
   log: (line: string) => void;
+  /** The clock a waiting card's age is read against when it is posted again. */
+  now?: () => Date;
 }
 
 export type MoveOutcome = "moved" | "not-pending" | "changed" | "settled";
@@ -364,7 +365,11 @@ function rebuild(
   return {
     was,
     post: async () => ({
-      eventId: await send("prose", "m.room.message", attentionV2Content(fresh)),
+      eventId: await send(
+        "prose",
+        "m.room.message",
+        attentionCardContent(fresh, (deps.now ?? (() => new Date()))()),
+      ),
     }),
     move: (to) => store.moveAttentionEvent(key, was, to.eventId),
   };

@@ -37,6 +37,18 @@ per wait: board, card and wait id. A card that parks again is a new waiting card
 **The card** is one message, treaty's attention.v2, offering three choices: resume here, resume at
 an earlier stage, or archive.
 
+**Its age.** A card can be posted long after it was raised: the sweep finds a wait from before the
+board was opted in, or the card is held until somebody joins. When the card was raised an hour or
+more before it is posted, its summary leads with when, in UTC, and how long before the post:
+
+> Raised 6 Nov, 06:32 UTC, 7 days before this card was posted; what it says is as of then.
+
+The agent's words and the failure count on the card are as of the raise, not as of the post. The
+raise time is the board's `ts` on `attention.pending`, the time the card started waiting. A card
+re-posted for an escalation says its age as of that post. The card carries no live state: anything
+showing where the card is now, such as its stage, its age in that stage or its attempt, comes from
+the board, read when it is shown.
+
 **The answer** is a `dev.superpipeline.attention.answer.v2` naming that wait and referencing that
 message, carried as that person:
 
@@ -51,7 +63,19 @@ POST /v1/boards/:boardId/cards/:cardId/archive
 `toStageKey` is given only to resume at an earlier stage; the archive's `comment` is optional. A
 resume needs an instruction for the next attempt, at most 2730 characters.
 
-**One receipt**: a line, and `dev.superpipeline.attention.outcome.v1` at the card.
+**One receipt** settles the card, and only one: a line in reply to the card ("Resumed by Ana — the
+board has it."), and `dev.superpipeline.attention.outcome.v1` referencing the card's message. An
+updated client closes the card by the outcome and draws the receipt in place of its choices. The
+reply is what ties the line to its card in any other client. In an encrypted room all three are
+sent encrypted.
+
+A waiting card is settled:
+
+- when it is answered from chat and the board takes the answer;
+- when the sweep no longer finds its wait: it was resumed or archived on the web or with `supi`, it
+  left its stage, or it waits on something else now. The line says "This card is no longer waiting
+  — it was settled on the board." and names nobody;
+- when an answer from chat finds the wait already changed (below).
 
 When the board says the wait has changed (`WAIT_CHANGED`: the card was resumed, archived or moved
 on the board, or waits on something else now), the room is told so in words and the card is closed

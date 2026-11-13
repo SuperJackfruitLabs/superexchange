@@ -138,9 +138,12 @@ export {
   type FollowupSettleOutcome,
 } from "./followup-card.ts";
 export {
+  RAISED_LINE_AFTER_MS,
+  attentionCardContent,
   attentionOffer,
   attentionReceiptBody,
   attentionTxnId,
+  raisedLine,
   type AttentionPostOutcome,
   type AttentionSettleOutcome,
 } from "./attention-card.ts";
