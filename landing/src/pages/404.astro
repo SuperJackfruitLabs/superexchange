@@ -7,10 +7,15 @@
 // bare error; with single-page handling it would get the home page and a 200, telling a crawler
 // that /anything is a real page.
 //
-// Same tokens and faces as index.astro (kept in step by hand; the two pages share no layout on
-// purpose), nothing more.
+// Same tokens and faces as index.astro (the grounds kept in step by hand; the two pages share no
+// layout on purpose), nothing more. Azure is vibekit's, from src/accent.ts, as on index.astro.
 import Mark from '../components/Mark.astro';
 import ShareMeta from '../components/ShareMeta.astro';
+import { productAccent } from '../accent';
+
+const { light: AL, dark: AD } = productAccent('superexchange');
+const ACCENT_CSS = `:root { --azure: ${AD.accent}; --azure-text: ${AD.text}; }
+@media (prefers-color-scheme: light) { :root { --azure: ${AL.accent}; --azure-text: ${AL.text}; } }`;
 
 const DOCS = 'https://docs.superexchange.dev';
 const title = 'Not found — SuperExchange';
@@ -33,15 +38,16 @@ const description = 'There is no page at this address.';
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
     />
+    <style is:inline set:html={ACCENT_CSS}></style>
     <style>
       :root {
-        --bg: #0e1116; --text: #e8ecf2; --muted: #8b95a5; --azure: #00a0d7; --azure-text: #3fb4e0;
+        --bg: #0e1116; --text: #e8ecf2; --muted: #8b95a5;
         --display: 'Bricolage Grotesque', system-ui, sans-serif; --sans: 'IBM Plex Sans', system-ui, sans-serif;
         --mono: 'IBM Plex Mono', ui-monospace, monospace;
         color-scheme: dark light;
       }
       @media (prefers-color-scheme: light) {
-        :root { --bg: #f7f8f6; --text: #12161c; --muted: #545e6b; --azure: #007aa2; --azure-text: #00759c; }
+        :root { --bg: #f7f8f6; --text: #12161c; --muted: #545e6b; }
       }
       * { box-sizing: border-box; }
       body {

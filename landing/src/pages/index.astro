@@ -24,17 +24,27 @@
  * sets the panel's beat (the inline script at the end); nothing plays by itself. On a phone each
  * step carries its own copy of the panel, fixed at its beat, above its text.
  *
- * Colours and faces are listed once, in `:root` below. The accent is azure (hue 230): the frame's
- * #00a0d7 in dark, vibekit's Daylight azure in light, hard-coded here until vibekit names it. Azure is spent on three things only: the answer in the
- * headline, the person's answer and the receipt — the parts of the page that are the product.
+ * Colours and faces are listed once, in `:root` below. The accent is SuperExchange's own in vibekit
+ * (PRODUCT_ACCENTS: azure, hue 230), its Daylight tokens for light and dark, read from the package
+ * at build time (src/accent.ts). The suite frame keeps its own SuperExchange colour (#00a0d7) for its
+ * bar and header. Azure is spent on three things only: the answer in the headline, the person's
+ * answer and the receipt — the parts of the page that are the product.
  */
 import ShareMeta from '../components/ShareMeta.astro';
 import Mark from '../components/Mark.astro';
 import Path from '../components/Path.astro';
+import { productAccent } from '../accent';
 import SuiteHead from '@superjackfruit/frontdoor/components/SuiteHead.astro';
 import Frame from '@superjackfruit/frontdoor/components/Frame.astro';
 
 const SITE = 'https://superexchange.dev';
+// vibekit's azure: --azure is the accent, --azure-text body-size text, --azure-wash its pale ground,
+// --azure-ink text on the accent. The light set also answers the system when nothing is chosen.
+const { light: AL, dark: AD } = productAccent('superexchange');
+const vars = (t: typeof AL) => `--azure: ${t.accent}; --azure-text: ${t.text}; --azure-wash: ${t.wash}; --azure-ink: ${t.fg};`;
+const ACCENT_CSS = `:root { ${vars(AD)} }
+:root[data-theme='light'] { ${vars(AL)} }
+@media (prefers-color-scheme: light) { :root:not([data-theme='dark']) { ${vars(AL)} } }`;
 const REPO = 'https://github.com/SuperJackfruitLabs/superexchange';
 const FORGE = 'https://forge.superjackfruit.com/SuperJackfruitLabs/superexchange';
 const DOCS = 'https://docs.superexchange.dev';
@@ -100,18 +110,18 @@ const RUN = [
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
     />
+    <style is:inline set:html={ACCENT_CSS}></style>
     <style>
-      /* Contrast (WCAG 2.x), on the grounds they sit on:
-           dark   azure #00a0d7 on #0e1116 6.3:1 · azure-text #3fb4e0 on surface #151a22 7.3:1
-                  button text #0e1116 on #00a0d7 6.3:1 · muted #8b95a5 5.8:1 on surface
-           light  azure #007aa2 on #f7f8f6 4.6:1 · azure-text #00759c on the azure wash 4.6:1
-                  button text #ffffff on #007aa2 4.9:1 · muted #545e6b 6.2:1
-         Dark azure is the frame's SuperExchange colour; light is vibekit's Daylight azure,
-         because #00a0d7 on a light ground is 2.9:1. */
+      /* Contrast (WCAG 2.x), on the grounds they sit on, with vibekit 0.0.15's Daylight azure:
+           dark   azure #009cce on #0e1116 6.0:1, on surface #151a22 5.5:1 · azure-text #08a1d4 on
+                  surface 5.9:1, on the wash 4.6:1 · button text #17162a on azure 5.6:1 ·
+                  muted #8b95a5 5.8:1 on surface
+           light  azure #007aa2 on #f7f8f6 4.6:1 · azure-text #00759c on the wash 4.6:1, on #eef1f2
+                  4.6:1 · button text #fff8ee on azure 4.6:1 · muted #545e6b 6.2:1
+         The azure tokens come from vibekit (ACCENT_CSS above); only the grounds are this page's. */
       :root {
         --bg: #0e1116; --surface: #151a22; --inset: #0a0d12; --line: rgba(255,255,255,.08);
         --text: #e8ecf2; --muted: #8b95a5; --code: #c9d1dc;
-        --azure: #00a0d7; --azure-text: #3fb4e0; --azure-wash: rgba(0,160,215,.15); --azure-ink: #0e1116;
         --gold: #ffc21a; --warn: #f4a526; --warn-tint: rgba(244,165,38,.15);
         --display: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
         --sans: 'IBM Plex Sans', system-ui, sans-serif;
@@ -121,7 +131,6 @@ const RUN = [
       :root[data-theme='light'] {
         --bg: #f7f8f6; --surface: #ffffff; --inset: #eef1f2; --line: rgba(14,17,22,.1);
         --text: #12161c; --muted: #545e6b; --code: #2a313b;
-        --azure: #007aa2; --azure-text: #00759c; --azure-wash: #dff4ff; --azure-ink: #ffffff;
         --warn: #8a5a06; --warn-tint: rgba(244,165,38,.18);
         color-scheme: light;
       }
@@ -130,8 +139,7 @@ const RUN = [
         :root:not([data-theme='dark']) {
           --bg: #f7f8f6; --surface: #ffffff; --inset: #eef1f2; --line: rgba(14,17,22,.1);
           --text: #12161c; --muted: #545e6b; --code: #2a313b;
-          --azure: #007aa2; --azure-text: #00759c; --azure-wash: #dff4ff; --azure-ink: #ffffff;
-          --warn: #8a5a06; --warn-tint: rgba(244,165,38,.18);
+            --warn: #8a5a06; --warn-tint: rgba(244,165,38,.18);
           color-scheme: light;
         }
       }

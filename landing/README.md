@@ -47,9 +47,11 @@ phone each step carries its own copy of the panel, fixed at its beat.
 **"Where it is today" is the README's own limits**: what SuperPipeline must still do, and that no
 production board has moved yet. When one of those changes, change the page.
 
-**Azure is the product colour** (hue 230): the frame's `#00a0d7` in dark and vibekit's Daylight
-azure `#007aa2` in light (the frame colour is 2.9:1 on a light ground), hard-coded in `:root`
-until vibekit names SuperExchange.
+**Azure is the product colour** (hue 230): vibekit names it (`PRODUCT_ACCENTS.superexchange`,
+since 0.0.15), and `src/accent.ts` reads its Daylight tokens for light and dark from the package's
+`accents.css` at build time, so the page follows vibekit rather than a copy. Only the grounds are
+the page's own. The suite frame keeps its own SuperExchange colour, `#00a0d7`, for its bar and
+header.
 
 **One mark.** The header, the favicon, the source line at the end of the page, the 404 and
 `og.png` all show the suite frame's SuperExchange logo. `src/components/Mark.astro` reads it from
