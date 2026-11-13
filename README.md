@@ -109,11 +109,11 @@ another room is ignored without a word, and a refusal the board gives is said in
 follow-up and waiting-card sweeps** (same interval, each with its own backoff) read each enabled
 board's `GET /v1/boards/:boardId/deliveries/pending` and `GET /v1/boards/:boardId/attention/pending`
 with this service's own token: one the relay missed is posted, and one the board no longer lists is
-settled with one receipt naming nobody ("settled on the board"), or never posted. **SuperPipeline
-does not yet admit a service token on either read**: they are agent-or-person routes there. Until
-it serves both on its service routes under `gates:read` (as it serves `gates/pending`), every board
-reads as unreadable to these two sweeps, nothing is settled by them, and they back off; the relay
-path and answers work without them.
+settled with one receipt naming nobody ("settled on the board"), or never posted. SuperPipeline
+v0.0.30 and later serve both reads to a service token on its service routes under `gates:read`
+(as it serves `gates/pending`). Against an older SuperPipeline every board reads as unreadable to
+these two sweeps, nothing is settled by them, and they back off; the relay path and answers work
+without them.
 
 **Board-room notices.** What the board says about work already in a room arrives from the relay
 as seven CloudEvents types (`com.superjackfruit.superpipeline.…v1`), each checked with treaty's
@@ -159,11 +159,12 @@ organization plane's assertion). Only a person; a comment is required, within 81
 board's refusal is said in the room. Success says nothing: the board's `decision.pulled_back` or
 `check.overridden` does.
 
-**SuperPipeline must still:** relay the seven notice types to SuperExchange; and admit this
-service's token on `GET /v1/boards/:boardId/cards/:cardId/checks` (it is a person-or-agent route
-there). Until it does, overdue checks escalate with the notice alone (a refused read is not
-retried), and the re-post on an admin's join can move only gates and questions (the follow-up and
-waiting-card lists are not admitted either, above).
+**What this needs from SuperPipeline:** v0.0.30 or later. It relays the seven notice types to the
+event relay (beside `gate.pending`, `elicitation.pending`, `delivery.pending` and
+`attention.pending`), and admits this service's token on
+`GET /v1/boards/:boardId/cards/:cardId/checks` under `gates:read`. Against an older SuperPipeline
+no notice reaches the room, overdue checks escalate with the notice alone (a refused read is not
+retried), and the re-post on an admin's join can move only gates and questions.
 
 **Board rooms are end-to-end encrypted, with SuperExchange's own keys.** The speaker has one
 device, taken once from an appservice login and recorded in the store, so a restart reuses it;
