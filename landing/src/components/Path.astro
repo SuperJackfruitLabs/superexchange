@@ -1,0 +1,93 @@
+---
+/**
+ * The path an answer takes, drawn as the parts it crosses, at one beat of "How it works".
+ *
+ * `beat` is 0-3, one per step. The pinned panel's beat is changed by the page's scroll script
+ * (it rewrites `data-beat`); each phone step renders its own copy fixed at its beat. Which parts
+ * are lit and what they say at each beat is all here, in `NODES` and the CSS below, so the
+ * script only ever sets one attribute.
+ */
+interface Props {
+  beat: number;
+}
+const { beat } = Astro.props;
+
+// on: the beats a part is lit at. tags: what it says at a beat.
+const NODES = [
+  { key: 'board', name: 'SuperPipeline board', note: 'a gate opens at review', on: [0, 3], tags: { 0: 'gate.pending', 3: 'resolved as Ana' } },
+  { key: 'relay', name: 'Event relay', note: 'treaty', on: [0], tags: { 0: 'signed delivery' } },
+  { key: 'sx', name: 'SuperExchange', note: 'its own store, keys and registration', on: [1, 3], tags: { 1: 'posts it once', 3: 'one receipt' } },
+  { key: 'accounts', name: 'Accounts', note: 'who sent this?', on: [2], tags: { 2: 'a person: Ana' } },
+  { key: 'room', name: 'The board’s room', note: 'Matrix, end-to-end encrypted', on: [1, 2, 3], tags: { 1: 'gate card', 2: 'Approve', 3: 'Approved by Ana' } },
+] as const;
+
+const FOOT = [
+  'The board raises a gate; the relay delivers it to SuperExchange, signed.',
+  'The room is made once, people invited; the gate is posted once, encrypted.',
+  'Ana answers with the card; Accounts says she is a person.',
+  'The gate is resolved as Ana, and the room gets one receipt.',
+];
+---
+
+<div class="path" data-beat={beat}>
+  <ul class="nodes">
+    {NODES.map((n) => (
+      <li class="node" data-on={n.on.join(' ')}>
+        <span class="dot"></span>
+        <span class="nname">{n.name}<span class="muted">{n.note}</span></span>
+        <span class="tags">
+          {Object.entries(n.tags).map(([b, t]) => <span class="ntag" data-b={b}>{t}</span>)}
+        </span>
+      </li>
+    ))}
+  </ul>
+  <p class="path-foot">{FOOT.map((f, i) => <span data-b={i}>{f}</span>)}</p>
+</div>
+
+<style>
+  .path {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 14px;
+    padding: 18px 18px 14px;
+  }
+  .nodes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .node {
+    display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+    padding: 10px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--inset);
+    opacity: .5; transition: border-color .3s ease, background-color .3s ease, opacity .3s ease;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--muted); transition: inherit; }
+  .nname { font-weight: 600; font-size: 14.5px; line-height: 1.35; min-width: 0; }
+  .nname .muted { display: block; font-weight: 400; font-size: 12.5px; color: var(--muted); }
+  .tags { display: grid; justify-items: end; }
+  .ntag {
+    grid-area: 1 / 1; font-family: var(--mono); font-size: 12px; color: var(--azure-text);
+    white-space: nowrap; opacity: 0; transition: opacity .3s ease;
+  }
+  .path-foot {
+    display: grid; margin: 14px 0 0; padding-top: 12px; border-top: 1px dashed var(--line);
+    font-family: var(--mono); font-size: 12.5px; color: var(--muted);
+  }
+  .path-foot span { grid-area: 1 / 1; opacity: 0; transition: opacity .3s ease; }
+
+  .path[data-beat='0'] .node[data-on~='0'],
+  .path[data-beat='1'] .node[data-on~='1'],
+  .path[data-beat='2'] .node[data-on~='2'],
+  .path[data-beat='3'] .node[data-on~='3'] { opacity: 1; border-color: var(--azure); background: var(--azure-wash); }
+  .path[data-beat='0'] .node[data-on~='0'] .dot,
+  .path[data-beat='1'] .node[data-on~='1'] .dot,
+  .path[data-beat='2'] .node[data-on~='2'] .dot,
+  .path[data-beat='3'] .node[data-on~='3'] .dot { border-color: var(--azure); background: var(--azure); }
+  .path[data-beat='0'] [data-b='0'],
+  .path[data-beat='1'] [data-b='1'],
+  .path[data-beat='2'] [data-b='2'],
+  .path[data-beat='3'] [data-b='3'] { opacity: 1; }
+
+  @media (max-width: 480px) {
+    .node { padding: 9px 12px; gap: 10px; }
+    .nname { font-size: 14px; }
+    .ntag { font-size: 11px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .node, .dot, .ntag, .path-foot span { transition: none; }
+  }
+</style>

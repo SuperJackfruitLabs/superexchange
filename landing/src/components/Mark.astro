@@ -1,0 +1,21 @@
+---
+/**
+ * The SuperExchange mark, inline: the suite frame's own logo (two speech bubbles, the board's
+ * question and the person's answer), read from the frontdoor package at build time so the
+ * header, this mark, the favicon and the share image are one drawing.
+ *
+ * public/favicon.svg is a byte-for-byte copy of the same file; scripts/check-frame.mjs fails
+ * the build when they differ.
+ */
+import svg from '@superjackfruit/frontdoor/brand/superexchange.svg?raw';
+interface Props {
+  size?: number;
+}
+const { size = 28 } = Astro.props;
+const html = svg
+  .replace(/<title[^>]*>[\s\S]*?<\/title>/, '')
+  .replace(/<svg\b([^>]*)>/, (_m: string, a: string) =>
+    `<svg${a.replace(/\s(role|aria-label|width|height)="[^"]*"/g, '')} width="${size}" height="${size}" aria-hidden="true" focusable="false">`);
+---
+
+<Fragment set:html={html} />

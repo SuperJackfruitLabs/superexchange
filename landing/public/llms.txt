@@ -1,0 +1,24 @@
+# SuperExchange
+
+> The suite's communication server: a Matrix application service that carries SuperPipeline's gates, questions, delivery follow-ups and waiting cards into the board's encrypted chat room, and carries a person's answer back to the board as that person.
+
+SuperExchange is early (v0.0.x) and MIT licensed. It takes board events from the suite's event relay, posts each one once in the board's room under its own appservice registration, and resolves the answer at SuperPipeline as the person who gave it, with one receipt. Only a person may answer; the organization plane (Accounts) says who a Matrix sender is. Board rooms are end-to-end encrypted with SuperExchange's own keys.
+
+It needs a SuperPipeline, the event relay, a Matrix homeserver and the organization plane. Nothing requires it: SuperPipeline remains a board without it, and SuperMessage remains a plain Matrix client. It runs in production, but no production board has moved to it yet.
+
+## Docs
+
+- [README](https://github.com/SuperJackfruitLabs/superexchange#readme): what it carries, how answers act, settings and how to run it
+- [Changelog](https://github.com/SuperJackfruitLabs/superexchange/blob/main/CHANGELOG.md): what each release contains
+
+## Links
+
+- [Home](https://superexchange.dev)
+- [Source repository](https://github.com/SuperJackfruitLabs/superexchange)
+- [Forge](https://forge.superjackfruit.com/SuperJackfruitLabs/superexchange): the primary repository, where pull requests are made; it needs a forge account, and GitHub carries the public mirror
+- [Releases](https://github.com/SuperJackfruitLabs/superexchange/releases)
+
+## Optional
+
+- [Super Jackfruit Labs](https://superjackfruit.com): the company behind SuperExchange
+- [Super Jackfruit Labs llms.txt](https://superjackfruit.com/llms.txt): all products in the family

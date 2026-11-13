@@ -1,0 +1,538 @@
+---
+/**
+ * superexchange.dev — the public page.
+ *
+ * One page, no framework; the suite frame owns the header, footer and theme toggle. Its job is
+ * to explain the product to somebody who typed the domain, then send them to the README or the
+ * source. There is no docs site yet: the README is the documentation, so every link that would
+ * go to docs goes there.
+ *
+ * This directory is outside the Bun workspace (`apps/*`) and has its own npm lockfile; the
+ * service's typecheck, lint and tests never look in here.
+ *
+ * Every string in the hero room is real or is marked as made up.
+ *   "superpipeline"         the speaker's display name (treaty BOARD_SPEAKER_DISPLAY_NAME;
+ *                           SuperExchange speaks as @superexchange_board under that name)
+ *   "Approval needed — …"   treaty's gate.v2 prose (packages/matrix-events/src/gate.ts)
+ *   "Approve "…"?"          the gate card's title, same file
+ *   "Approved by … — the board has it."  treaty's gateOutcomeBody (answers.ts)
+ *   the card title, stage and names are made up, and the figure says so.
+ * The carried kinds, the routes and the settings are the README's. The "today" list is the
+ * README's own "must still" paragraphs and the charter's open questions. If those change, this
+ * page is wrong.
+ *
+ * "How it works" is one panel pinned beside four steps. The step nearest the viewport's centre
+ * sets the panel's beat (the inline script at the end); nothing plays by itself. On a phone each
+ * step carries its own copy of the panel, fixed at its beat, above its text.
+ *
+ * Colours and faces are listed once, in `:root` below. The accent is azure (hue 230): the frame's
+ * #00a0d7 in dark, vibekit's Daylight azure in light, hard-coded here until vibekit names it. Azure is spent on three things only: the answer in the
+ * headline, the person's answer and the receipt — the parts of the page that are the product.
+ */
+import ShareMeta from '../components/ShareMeta.astro';
+import Mark from '../components/Mark.astro';
+import Path from '../components/Path.astro';
+import SuiteHead from '@superjackfruit/frontdoor/components/SuiteHead.astro';
+import Frame from '@superjackfruit/frontdoor/components/Frame.astro';
+
+const SITE = 'https://superexchange.dev';
+const REPO = 'https://github.com/SuperJackfruitLabs/superexchange';
+const FORGE = 'https://forge.superjackfruit.com/SuperJackfruitLabs/superexchange';
+const README = `${REPO}#readme`;
+// The one hand-typed version on this page: the latest release tag. Bump with each release.
+const VERSION = 'v0.0.2';
+const TITLE = 'SuperExchange — the board’s decisions, answered in chat';
+const DESCRIPTION =
+  'A Matrix application service that carries SuperPipeline’s gates, questions and waiting cards into the board’s encrypted room, and acts on the answer as the person who gave it. Early, MIT.';
+
+// Structured data for search and agents; every value is one the page already states.
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'SuperExchange',
+  description: DESCRIPTION,
+  url: SITE,
+  applicationCategory: 'DeveloperApplication',
+  operatingSystem: 'Linux',
+  softwareVersion: VERSION,
+  license: 'https://opensource.org/licenses/MIT',
+  sameAs: [REPO],
+  publisher: { '@type': 'Organization', name: 'Super Jackfruit Labs', url: 'https://superjackfruit.com' },
+};
+
+// What it carries, from the README's Status section.
+const carries = [
+  { name: 'Gates', what: 'An approval or a choice a stage is waiting on. Approve, request changes or reject from the room; a choice of versions names the one you pick.' },
+  { name: 'Board questions', what: 'An agent blocked on a person, or a SuperToolkit approval request. Answer with the card, or type the number or label of an option. A typed reply can decline an approval, never grant it.' },
+  { name: 'Delivery follow-ups', what: 'A post approved for manual delivery still owes the board its live link. Record the link, or switch to automatic delivery when the whole post could be shown.' },
+  { name: 'Waiting cards', what: 'A card parked for a person after repeated failures, a block or a missing permission. Resume it here or at an earlier stage, with an instruction for the next attempt, or archive it.' },
+  { name: 'Notices', what: 'Reminders, escalations to the workspace’s admins, quorum progress, held approvals and failed or overridden checks, each said once, in reply to its card.' },
+  { name: 'Pull-backs and overrides', what: 'Pull a gate back, or override a failed check, from the room. Each needs a comment, and acts as the person who sent it.' },
+];
+
+// The four beats of the panel; the steps' text is below, in the markup.
+const BEATS = 4;
+
+const RUN = [
+  'bun install',
+  'MATRIX_HOMESERVER_URL=… MATRIX_SERVER_NAME=… MATRIX_AS_TOKEN=… MATRIX_HS_TOKEN=… \\',
+  'TREATY_RELAY_DELIVERY_SECRET=… SUPEREXCHANGE_OPERATOR_TOKEN_SHA256=… \\',
+  'ORG_PLANE_URL=… ORG_PLANE_SERVICE_CREDENTIAL=… SUPERPIPELINE_URL=… \\',
+  'SUPEREXCHANGE_CRYPTO_PASSPHRASE="$(openssl rand -base64 32)" SUPEREXCHANGE_DATA_DIR=$PWD/.data \\',
+  '  bun apps/exchange/src/main.ts',
+  'curl http://127.0.0.1:8080/healthz',
+];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{TITLE}</title>
+    <meta name="description" content={DESCRIPTION} />
+    <meta name="theme-color" content="#0e1116" />
+    <SuiteHead product="superexchange" />
+    <ShareMeta title={TITLE} description={DESCRIPTION} />
+    <script type="application/ld+json" set:html={JSON.stringify(JSON_LD)} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap"
+    />
+    <style>
+      /* Contrast (WCAG 2.x), on the grounds they sit on:
+           dark   azure #00a0d7 on #0e1116 6.3:1 · azure-text #3fb4e0 on surface #151a22 7.3:1
+                  button text #0e1116 on #00a0d7 6.3:1 · muted #8b95a5 5.8:1 on surface
+           light  azure #007aa2 on #f7f8f6 4.6:1 · azure-text #00759c on the azure wash 4.6:1
+                  button text #ffffff on #007aa2 4.9:1 · muted #545e6b 6.2:1
+         Dark azure is the frame's SuperExchange colour; light is vibekit's Daylight azure,
+         because #00a0d7 on a light ground is 2.9:1. */
+      :root {
+        --bg: #0e1116; --surface: #151a22; --inset: #0a0d12; --line: rgba(255,255,255,.08);
+        --text: #e8ecf2; --muted: #8b95a5; --code: #c9d1dc;
+        --azure: #00a0d7; --azure-text: #3fb4e0; --azure-wash: rgba(0,160,215,.15); --azure-ink: #0e1116;
+        --gold: #ffc21a; --warn: #f4a526; --warn-tint: rgba(244,165,38,.15);
+        --display: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
+        --sans: 'IBM Plex Sans', system-ui, sans-serif;
+        --mono: 'IBM Plex Mono', ui-monospace, monospace;
+        color-scheme: dark light;
+      }
+      :root[data-theme='light'] {
+        --bg: #f7f8f6; --surface: #ffffff; --inset: #eef1f2; --line: rgba(14,17,22,.1);
+        --text: #12161c; --muted: #545e6b; --code: #2a313b;
+        --azure: #007aa2; --azure-text: #00759c; --azure-wash: #dff4ff; --azure-ink: #ffffff;
+        --warn: #8a5a06; --warn-tint: rgba(244,165,38,.18);
+        color-scheme: light;
+      }
+      :root[data-theme='dark'] { color-scheme: dark; }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme='dark']) {
+          --bg: #f7f8f6; --surface: #ffffff; --inset: #eef1f2; --line: rgba(14,17,22,.1);
+          --text: #12161c; --muted: #545e6b; --code: #2a313b;
+          --azure: #007aa2; --azure-text: #00759c; --azure-wash: #dff4ff; --azure-ink: #ffffff;
+          --warn: #8a5a06; --warn-tint: rgba(244,165,38,.18);
+          color-scheme: light;
+        }
+      }
+
+      * { box-sizing: border-box; }
+      html { -webkit-text-size-adjust: 100%; }
+      body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font-family: var(--sans); font-size: 17px; line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: inherit; }
+      a:focus-visible { outline: 2px solid var(--azure); outline-offset: 3px; border-radius: 4px; }
+      .mono { font-family: var(--mono); }
+      .muted { color: var(--muted); }
+      code { font-family: var(--mono); font-size: .86em; }
+      .wrap { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+      /* ── hero ─────────────────────────────────────────────────── */
+      .hero { overflow-x: clip; }
+      .hero .wrap {
+        display: grid; grid-template-columns: minmax(0, 1fr) 480px; gap: 56px; align-items: center;
+        min-height: calc(100svh - 108px); padding-top: 56px; padding-bottom: 72px;
+      }
+      .hero .wrap > * { min-width: 0; }
+      .kicker { font-family: var(--mono); font-size: 12.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 18px; }
+      h1 {
+        font-family: var(--display); font-weight: 700;
+        font-size: clamp(40px, 4.8vw, 62px); line-height: 1.02;
+        letter-spacing: -0.03em; margin: 0; max-width: 13ch; text-wrap: balance;
+      }
+      h1 em { font-style: normal; color: var(--azure); }
+      .lede { color: var(--muted); font-size: 18px; line-height: 1.55; margin: 20px 0 28px; max-width: 34em; }
+      .cta { display: flex; gap: 12px; flex-wrap: wrap; }
+      .btn {
+        display: inline-flex; align-items: center; border-radius: 10px;
+        min-height: 46px; padding: 0 20px; font: 600 15px var(--sans); text-decoration: none;
+        border: 1px solid transparent; transition: filter .15s, border-color .15s;
+      }
+      .btn-primary { background: var(--azure); color: var(--azure-ink); }
+      .btn-primary:hover { filter: brightness(1.08); }
+      .btn-ghost { background: transparent; border-color: var(--line); color: var(--text); }
+      .btn-ghost:hover { border-color: var(--azure); }
+      .status { margin: 22px 0 0; font-family: var(--mono); font-size: 13px; color: var(--muted); }
+      .status b { font-weight: 500; color: var(--text); }
+
+      /* ── the room: this page's signature ─────────────────────── */
+      .room-wrap { position: relative; margin: 0; }
+      .room-wrap::before {
+        content: ''; position: absolute; inset: -40px -30px; z-index: 0; pointer-events: none;
+        background: radial-gradient(closest-side, var(--azure-wash), transparent 75%); opacity: .6;
+      }
+      .room {
+        position: relative; z-index: 1; background: var(--surface);
+        border: 1px solid var(--line); border-radius: 14px; overflow: hidden; font-size: 14.5px;
+        box-shadow: 0 24px 48px -24px rgba(0,0,0,.45);
+      }
+      :root[data-theme='light'] .room { box-shadow: 0 24px 48px -28px rgba(14,17,22,.22); }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme='dark']) .room { box-shadow: 0 24px 48px -28px rgba(14,17,22,.22); }
+      }
+      .room-head {
+        display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 13px 16px; border-bottom: 1px solid var(--line);
+      }
+      .room-name { font-family: var(--mono); font-size: 13px; font-weight: 500; }
+      .lock { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+      .lock svg { width: 12px; height: 12px; }
+      .msgs { padding: 14px 16px 16px; display: grid; gap: 14px; }
+      .msg { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; }
+      .av {
+        width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+        font: 600 12px var(--sans); background: var(--inset); color: var(--muted);
+      }
+      .av.board { background: var(--gold); color: #2c2a26; }
+      .av.person { background: var(--azure-wash); color: var(--azure-text); }
+      .who { font-weight: 600; font-size: 13.5px; }
+      .who .muted { font-weight: 400; font-family: var(--mono); font-size: 11.5px; margin-left: 6px; }
+      .body { margin: 2px 0 0; color: var(--text); }
+      .body code { background: var(--inset); padding: 1px 5px; border-radius: 4px; }
+      .card {
+        margin-top: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+        background: var(--inset);
+      }
+      .card-title { font-weight: 600; margin: 0 0 4px; }
+      .card-meta { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 0 0 10px; }
+      .opts { display: flex; flex-wrap: wrap; gap: 6px; }
+      .opt {
+        font: 500 12.5px var(--sans); padding: 5px 10px; border-radius: 7px;
+        border: 1px solid var(--line); background: var(--surface); color: var(--text);
+      }
+      .opt.chosen { border-color: var(--azure); background: var(--azure-wash); color: var(--azure-text); }
+      .receipt {
+        display: flex; gap: 8px; align-items: baseline; padding: 9px 12px; border-radius: 9px;
+        background: var(--azure-wash); color: var(--azure-text); font-size: 13.5px; font-weight: 500;
+      }
+      .example { font-family: var(--mono); font-size: 12px; color: var(--muted); margin: 10px 0 0; text-align: right; position: relative; z-index: 1; }
+
+      /* ── bands ────────────────────────────────────────────────── */
+      section.band { border-top: 1px solid var(--line); }
+      section.band .wrap { padding-top: 88px; padding-bottom: 88px; }
+      h2 {
+        font-family: var(--display); font-weight: 700;
+        font-size: clamp(28px, 3vw, 38px); line-height: 1.12; letter-spacing: -0.025em;
+        margin: 0 0 12px; text-wrap: balance;
+      }
+      h3 { font-family: var(--display); font-weight: 600; font-size: 19px; letter-spacing: -0.01em; margin: 10px 0 6px; }
+      .sub { color: var(--muted); margin: 0 0 32px; max-width: 640px; }
+      .step-n { font-family: var(--mono); font-size: 13px; color: var(--azure-text); }
+      .cell p { margin: 0; color: var(--muted); font-size: 15.5px; }
+
+      /* how it works: the panel pinned beside its steps */
+      .steps-layout { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); gap: 56px; margin-top: 8px; }
+      .panel-pin { grid-column: 1; grid-row: 1; position: sticky; top: max(24px, calc(50svh - 190px)); align-self: start; }
+      .step-list { grid-column: 2; grid-row: 1; list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+      .step-list > li { min-height: 62svh; display: flex; flex-direction: column; justify-content: center; }
+      .step-list > li:first-child { min-height: 46svh; justify-content: flex-start; padding-top: 40px; }
+      .step-list > li { opacity: .45; transition: opacity .3s ease; }
+      .step-list > li.focus { opacity: 1; }
+      .step-panel { display: none; }
+
+      .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px 32px; margin-top: 32px; }
+      .grid .cell h3 { margin-top: 0; }
+      .grid .cell { border-top: 2px solid var(--line); padding-top: 16px; }
+
+      .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 40px; }
+      ul.facts { list-style: none; margin: 18px 0 0; padding: 0; display: grid; gap: 10px; }
+      ul.facts li { position: relative; padding-left: 22px; color: var(--muted); }
+      ul.facts li b { color: var(--text); font-weight: 600; }
+      ul.facts li::before {
+        content: ''; position: absolute; left: 2px; top: .62em; width: 8px; height: 8px;
+        border: 1.5px solid var(--azure); border-radius: 50%;
+      }
+      ul.facts.warn li::before { border-color: var(--warn); }
+
+      pre {
+        font-family: var(--mono); font-size: 13px; line-height: 1.75; color: var(--code);
+        background: var(--inset); border: 1px solid var(--line); border-radius: 10px;
+        margin: 0; padding: 14px 16px; overflow-x: auto; max-width: 100%;
+      }
+      pre .p { color: var(--muted); user-select: none; }
+      .after { margin: 14px 0 0; color: var(--muted); font-size: 15.5px; max-width: 680px; }
+      .more { color: var(--azure-text); font-weight: 500; text-underline-offset: 3px; }
+      .sig { display: inline-flex; color: var(--azure); vertical-align: -6px; margin-right: 8px; }
+
+      @media (max-width: 899px) {
+        .hero .wrap { grid-template-columns: 1fr; gap: 44px; min-height: auto; padding-top: 40px; padding-bottom: 56px; }
+        section.band .wrap { padding-top: 64px; padding-bottom: 64px; }
+        .grid, .two { grid-template-columns: 1fr; }
+        .steps-layout { grid-template-columns: 1fr; gap: 0; }
+        .panel-pin { display: none; }
+        .step-list { grid-column: 1; gap: 48px; }
+        .step-list > li, .step-list > li:first-child { min-height: 0; padding-top: 0; justify-content: flex-start; opacity: 1; }
+        .step-panel { display: block; margin-bottom: 18px; }
+      }
+      @media (max-width: 480px) {
+        .wrap { padding: 0 16px; }
+        .msgs, .room-head { padding-left: 12px; padding-right: 12px; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        * { transition: none !important; animation: none !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <Frame product="superexchange" cta={{ label: 'Read the README', href: README }}>
+    <main>
+      <section class="hero">
+        <div class="wrap">
+          <div>
+            <p class="kicker">Board work, in chat</p>
+            <h1>The board asks. <em>Answer in chat.</em></h1>
+            <p class="lede">
+              SuperExchange is a Matrix application service. It carries SuperPipeline’s gates,
+              questions and waiting cards into the board’s encrypted room, and when a person
+              answers there, the board acts on it as that person.
+            </p>
+            <div class="cta">
+              <a class="btn btn-primary" href={README}>Read the README</a>
+              <a class="btn btn-ghost" href={REPO}>Source on GitHub</a>
+            </div>
+            <p class="status">
+              <b>Early:</b> <a href={`${REPO}/releases/tag/${VERSION}`}>{VERSION}</a> · MIT · runs
+              in production, no production board moved to it yet
+            </p>
+          </div>
+
+          <figure class="room-wrap" aria-label="An example board room: a gate posted by the board, a person's approval, and the receipt">
+            <div class="room">
+              <div class="room-head">
+                <span class="room-name">#superexchange_board_brd_launch</span>
+                <span class="lock">
+                  <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><rect x="3" y="7" width="10" height="7" rx="1.5" /><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" /></svg>
+                  encrypted
+                </span>
+              </div>
+              <div class="msgs">
+                <div class="msg">
+                  <span class="av board" aria-hidden="true">sp</span>
+                  <div>
+                    <div class="who">superpipeline <span class="muted">board</span></div>
+                    <p class="body">Approval needed — “Launch post” at stage <code>review</code>. Approve, request changes, or reject.</p>
+                    <div class="card">
+                      <p class="card-title">Approve “Launch post”?</p>
+                      <p class="card-meta">gate · stage review</p>
+                      <div class="opts">
+                        <span class="opt chosen">Approve</span>
+                        <span class="opt">Request changes</span>
+                        <span class="opt">Reject</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="msg">
+                  <span class="av person" aria-hidden="true">A</span>
+                  <div>
+                    <div class="who">Ana <span class="muted">answered with the card</span></div>
+                    <p class="body">Approve</p>
+                  </div>
+                </div>
+                <div class="msg">
+                  <span class="av board" aria-hidden="true">sp</span>
+                  <div>
+                    <div class="who">superpipeline</div>
+                    <p class="receipt">Approved by Ana — the board has it.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <figcaption class="example">Example room. The wording is treaty’s; the card and names are made up.</figcaption>
+          </figure>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="how">
+        <div class="wrap">
+          <h2 id="how">How an answer reaches the board</h2>
+          <p class="sub">
+            One path per board, one message per event, one receipt per answer. The steps below
+            are a gate; questions, follow-ups and waiting cards go the same way.
+          </p>
+          <div class="steps-layout">
+            <ol class="step-list">
+              {[0, 1, 2, 3].map((b) => (
+                <li data-beat={b}>
+                  <div class="step-panel" aria-hidden="true">
+                    <Path beat={b} />
+                  </div>
+                  <span class="step-n">{b + 1}</span>
+                  {b === 0 && (<>
+                    <h3>The board raises a gate</h3>
+                    <p>
+                      SuperPipeline publishes <code>gate.pending</code> to the suite’s event relay,
+                      which delivers it to SuperExchange signed. It is kept only for boards an
+                      operator has opted in.
+                    </p>
+                  </>)}
+                  {b === 1 && (<>
+                    <h3>It is posted once, encrypted</h3>
+                    <p>
+                      SuperExchange makes the board’s room once, invites the board’s people, waits
+                      until one has joined, then posts the gate exactly once. Rooms are end-to-end
+                      encrypted with SuperExchange’s own keys.
+                    </p>
+                  </>)}
+                  {b === 2 && (<>
+                    <h3>A person answers in the room</h3>
+                    <p>
+                      Accounts says who the Matrix sender is. Only a person may answer, and only
+                      with an option the gate offered. An agent’s answer, or one from another
+                      room, is ignored.
+                    </p>
+                  </>)}
+                  {b === 3 && (<>
+                    <h3>The board acts as that person</h3>
+                    <p>
+                      The gate is resolved at SuperPipeline as the person who answered, and one
+                      receipt is posted. A repeat is told it was already decided. A gate decided
+                      on the web is settled in the room by the next sweep.
+                    </p>
+                  </>)}
+                </li>
+              ))}
+            </ol>
+            <div class="panel-pin" aria-hidden="true">
+              <Path beat={0} />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="carries">
+        <div class="wrap">
+          <h2 id="carries">What it carries</h2>
+          <p class="sub">
+            Everything a board waits on a person for, posted in the board’s room and answered
+            there. The event formats are treaty’s: SuperExchange carries them, it does not
+            define them.
+          </p>
+          <div class="grid">
+            {carries.map((c) => (
+              <div class="cell">
+                <h3>{c.name}</h3>
+                <p>{c.what}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="needs">
+        <div class="wrap two">
+          <div>
+            <h2 id="needs">What it needs</h2>
+            <ul class="facts">
+              <li><b>SuperPipeline</b>, whose boards it speaks for, read and acted on through its API.</li>
+              <li><b>The event relay</b> (treaty’s), which delivers the board’s events signed.</li>
+              <li><b>A Matrix homeserver</b>, where it registers as an application service with its own namespace.</li>
+              <li><b>Accounts</b>, the organization plane, which says who a Matrix sender is and vouches for them to the board.</li>
+            </ul>
+          </div>
+          <div>
+            <h2>What needs it</h2>
+            <ul class="facts">
+              <li><b>Nothing.</b> SuperPipeline remains a board without it, and its gates are still decided on the web and in <code>supi</code>.</li>
+              <li>SuperMessage remains a plain Matrix client. Any Matrix client can read and answer the room.</li>
+              <li>A board leaves by being taken out of SuperExchange; agents keep working either way.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="run">
+        <div class="wrap">
+          <h2 id="run">Run it</h2>
+          <p class="sub">
+            From source, with Bun. Every setting is in the README; a missing or malformed one
+            stops it before it listens, naming the setting, never its value.
+          </p>
+          <pre aria-label="Run it from source"><code>{RUN.map((line, i) => (<>{i <= 1 || i === RUN.length - 1 ? <span class="p">$ </span> : null}{line}{'\n'}</>))}</code></pre>
+          <p class="after">
+            An operator then opts a board in through <code>PUT /v1/boards/:boardId</code>. Back up
+            the crypto store with the database: lose it and the room keys go with it.
+            <a class="more" href={`${REPO}#run-it`}>The full setup is in the README.</a>
+          </p>
+        </div>
+      </section>
+
+      <section class="band" aria-labelledby="today">
+        <div class="wrap">
+          <h2 id="today">Where it is today</h2>
+          <p class="sub">
+            Early, and honest about it. This is {VERSION}.
+          </p>
+          <ul class="facts warn">
+            <li>It runs in production, but no production board has moved to it yet. A board moves one at a time, and until it does, its chat stays where it was.</li>
+            <li>SuperPipeline does not yet relay the board-room notices (reminders, escalations, quorum progress, held approvals, checks). SuperExchange is ready to say them; until the board sends them, it says nothing.</li>
+            <li>The follow-up and waiting-card sweeps cannot read the board with a service token yet, so they back off. Those cards still arrive and are answered through the relay.</li>
+            <li>An answer from a Matrix account that is linked to nobody does not count. The person is told how to link it, at most once a day per room.</li>
+            <li>No published image, package or hosted service: you run it from source.</li>
+          </ul>
+          <p class="after">
+            <span class="sig"><Mark size={22} /></span>Source on <a class="more" href={REPO}>GitHub</a>,
+            mirrored from <a class="more" href={FORGE}>the forge</a> (where pull requests are made; it
+            needs a forge account). What changed in each release is in the
+            <a class="more" href={`${REPO}/blob/main/CHANGELOG.md`}>changelog</a>.
+          </p>
+        </div>
+      </section>
+    </main>
+    </Frame>
+
+    <script is:inline define:vars={{ BEATS }}>
+      // How it works: the step nearest the viewport's centre sets the pinned panel's beat.
+      // Scroll is the only clock: nothing advances on a timer.
+      (() => {
+        const pin = document.querySelector('.panel-pin .path');
+        const steps = [...document.querySelectorAll('.step-list > li')];
+        if (!pin || !steps.length) return;
+        let current = -1;
+        const pick = () => {
+          const mid = innerHeight / 2;
+          let best = 0, dist = Infinity;
+          steps.forEach((s, i) => {
+            const r = s.getBoundingClientRect();
+            const d = Math.abs(r.top + r.height / 2 - mid);
+            if (d < dist) { dist = d; best = i; }
+          });
+          best = Math.min(best, BEATS - 1);
+          if (best === current) return;
+          current = best;
+          pin.dataset.beat = String(current);
+          steps.forEach((s, i) => s.classList.toggle('focus', i === current));
+        };
+        let queued = false;
+        const onScroll = () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; pick(); }); } };
+        addEventListener('scroll', onScroll, { passive: true });
+        addEventListener('resize', onScroll);
+        pick();
+      })();
+    </script>
+  </body>
+</html>
