@@ -1,0 +1,100 @@
+/*
+ * The docs wear the landing page's identity.
+ *
+ * Without this file the docs are Starlight's stock blue on system fonts, so following a docs
+ * link from superexchange.dev would feel like leaving for somebody else's site. Every value
+ * below is one of the landing page's tokens (`landing/src/pages/index.astro`, `:root`),
+ * expressed as the seven-step gray ramp plus accent triple that Starlight derives everything
+ * else from, so no component needs restyling.
+ *
+ * Azure is the product colour: the suite frame's #00a0d7 in dark and vibekit's Daylight azure
+ * #007aa2 in light (the frame colour is 2.9:1 on a light ground), as on the landing page.
+ * The in-between gray steps are interpolations and are marked as such.
+ *
+ * `html:root` rather than `:root` is load-bearing: this file can be bundled ahead of
+ * Starlight's own props.css, and at equal specificity Starlight's defaults would win with a
+ * build that succeeds and a page that looks untouched.
+ *
+ * Contrast (WCAG 2.x), measured on the grounds each pair actually sits on:
+ *   dark   links #9fdcf3 on #0e1116 12.6:1 · body #bcc4d0 10.8:1 · muted #8b95a5 6.2:1
+ *          (5.8:1 on the surface) · active sidebar item #002b3b on #9fdcf3 9.9:1 ·
+ *          hero button #0e1116 on #9fdcf3 12.6:1 · note aside accent #9fdcf3 on #002b3b
+ *          9.9:1, its body #e8ecf2 12.6:1
+ *   light  links #007aa2 on #f7f8f6 4.6:1 (4.9:1 on the white nav) · body #353d48 10.3:1 ·
+ *          muted #545e6b 6.2:1 · active sidebar item #fff on #007aa2 4.9:1 · hero button
+ *          #fff on #007aa2 4.9:1 · note aside accent #00415a on #dff4ff 9.7:1, its body
+ *          #12161c 16.0:1
+ * The frame azure #00a0d7 is 6.3:1 on the dark ground but is never body text: it is the
+ * accent of rules and fills, and link text uses the lighter #9fdcf3.
+ */
+html:root {
+  /* dark: the default, as on the landing page */
+  --sl-color-white: #e8ecf2; /* text */
+  --sl-color-gray-1: #e8ecf2; /* text */
+  --sl-color-gray-2: #bcc4d0; /* between text and muted */
+  --sl-color-gray-3: #8b95a5; /* muted */
+  --sl-color-gray-4: #4f5866; /* between muted and line */
+  --sl-color-gray-5: #262d38; /* line (the landing page's 8% white, made opaque and a step brighter) */
+  --sl-color-gray-6: #151a22; /* surface */
+  --sl-color-gray-7: #11151b; /* between surface and ground */
+  --sl-color-black: #0e1116; /* ground */
+
+  /* In dark, Starlight sets text on an accent fill in accent-low (the active sidebar item),
+     so it is an azure so deep it reads as ink: 9.9:1 on accent-high. */
+  --sl-color-accent-low: #002b3b;
+  --sl-color-accent: #00a0d7; /* the frame's azure */
+  --sl-color-accent-high: #9fdcf3; /* link text: a lighter azure, 12.6:1 on the ground */
+
+  --sl-font: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+  --sx-font-display: 'Bricolage Grotesque', 'IBM Plex Sans', system-ui, sans-serif;
+}
+
+html:root[data-theme='light'] {
+  --sl-color-white: #12161c; /* text */
+  --sl-color-gray-1: #232a33; /* between text and muted */
+  --sl-color-gray-2: #353d48; /* between text and muted */
+  --sl-color-gray-3: #545e6b; /* muted */
+  --sl-color-gray-4: #8a93a0; /* between muted and line */
+  --sl-color-gray-5: #dde1e2; /* line */
+  --sl-color-gray-6: #eef1f2; /* inset */
+  --sl-color-gray-7: #ffffff; /* surface */
+  --sl-color-black: #f7f8f6; /* ground */
+
+  /* Daylight azure: link text on every page, 4.6:1 on the ground. The landing page uses the
+     same value. The tint is the landing page's azure wash. */
+  --sl-color-accent-low: #dff4ff;
+  --sl-color-accent: #007aa2;
+  --sl-color-accent-high: #00415a;
+
+  /* Text on a filled azure (the active sidebar item, the skip link) is white, as on the
+     landing page's button: 4.9:1. */
+  --sl-color-text-invert: #ffffff;
+}
+
+/* The splash page's primary button sets its text in --sl-color-black, which in light is the
+   ground; white matches the landing page's button and the active sidebar item. */
+html:root[data-theme='light'] .sl-link-button.primary,
+html:root[data-theme='light'] .sl-link-button.primary:hover {
+  color: #ffffff;
+}
+
+/* Notes are azure rather than Starlight's blue, so the docs have one accent. The tint is
+   accent-low and the accent text is accent-high in both themes (ratios above). */
+.starlight-aside--note {
+  --sl-color-asides-text-accent: var(--sl-color-accent-high);
+  --sl-color-asides-border: var(--sl-color-accent);
+  background-color: var(--sl-color-accent-low);
+}
+
+/* The display face on headings and the site title, as on the landing page. Body text stays
+   IBM Plex Sans. */
+.site-title,
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--sx-font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}

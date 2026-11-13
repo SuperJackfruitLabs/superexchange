@@ -1,0 +1,51 @@
+---
+/**
+ * The wordmark: the mark beside the name in Bricolage Grotesque, in the text colour.
+ *
+ * This exists only so the docs header matches the landing page's brand. Starlight's
+ * stock title is the name alone, in the accent colour; the landing page shows the mark
+ * and the name in plain text, with the azure spent on the mark.
+ *
+ * It deliberately keeps everything the stock component does: the same link target,
+ * the same `.site-title sl-flex` classes so Starlight's own styles and this site's
+ * display-font rule still apply, and `translate="no"` so a browser's page
+ * translation does not rewrite a product name.
+ *
+ * The mark is drawn here rather than through Starlight's `logo` option because that
+ * option is rendered by the stock component this file replaces. `/favicon.svg` is the
+ * mark itself, copied from landing/public/favicon.svg; the empty alt is deliberate,
+ * since the name next to it already says it and a screen reader should not hear it twice.
+ */
+const { siteTitle, siteTitleHref } = Astro.locals.starlightRoute;
+---
+
+<a href={siteTitleHref} class="site-title sl-flex">
+  <img class="mark" src="/favicon.svg" alt="" width="28" height="28" />
+  <span translate="no">{siteTitle}</span>
+</a>
+
+<style>
+  /* Replacing the component also discards the styles Starlight scoped to it, which is
+     easy to miss: supermessage's first build of this override rendered an UNDERLINED
+     wordmark, because `text-decoration: none` lived in the file that was replaced. The
+     block below restores the stock component's own rules, with only `color` changed
+     (and the face, which theme.css sets for `.site-title`). */
+  .site-title {
+    align-items: center;
+    gap: 0.6rem;
+    font-size: var(--sl-text-h4);
+    font-weight: 600;
+    color: var(--sl-color-white);
+    text-decoration: none;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  span {
+    overflow: hidden;
+  }
+  .mark {
+    flex: none;
+    width: 1.75rem;
+    height: auto;
+  }
+</style>

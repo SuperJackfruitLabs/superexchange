@@ -5,3 +5,4 @@ bun.lock
 .github/workflows/release.yml
 apps/exchange/test/fixtures/store-trace.json
 landing/
+docs-site/
