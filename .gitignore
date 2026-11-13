@@ -1,5 +1,7 @@
 node_modules/
 *.tgz
+# The landing page's vendored suite packages (frontdoor, vibekit) are committed: npm ci needs them.
+!landing/vendor/*.tgz
 .DS_Store
 dist/
 .data/
