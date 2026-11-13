@@ -3,9 +3,8 @@
  * superexchange.dev — the public page.
  *
  * One page, no framework; the suite frame owns the header, footer and theme toggle. Its job is
- * to explain the product to somebody who typed the domain, then send them to the README or the
- * source. There is no docs site yet: the README is the documentation, so every link that would
- * go to docs goes there.
+ * to explain the product to somebody who typed the domain, then send them to the docs
+ * (docs.superexchange.dev) or the source.
  *
  * This directory is outside the Bun workspace (`apps/*`) and has its own npm lockfile; the
  * service's typecheck, lint and tests never look in here.
@@ -17,9 +16,9 @@
  *   "Approve "…"?"          the gate card's title, same file
  *   "Approved by … — the board has it."  treaty's gateOutcomeBody (answers.ts)
  *   the card title, stage and names are made up, and the figure says so.
- * The carried kinds, the routes and the settings are the README's. The "today" list is the
- * README's own "must still" paragraphs and the charter's open questions. If those change, this
- * page is wrong.
+ * The carried kinds, the routes and the settings are the README's and the docs'. The "today"
+ * list is the docs' Status and limits page and the charter's open questions. If those change,
+ * this page is wrong.
  *
  * "How it works" is one panel pinned beside four steps. The step nearest the viewport's centre
  * sets the panel's beat (the inline script at the end); nothing plays by itself. On a phone each
@@ -38,7 +37,7 @@ import Frame from '@superjackfruit/frontdoor/components/Frame.astro';
 const SITE = 'https://superexchange.dev';
 const REPO = 'https://github.com/SuperJackfruitLabs/superexchange';
 const FORGE = 'https://forge.superjackfruit.com/SuperJackfruitLabs/superexchange';
-const README = `${REPO}#readme`;
+const DOCS = 'https://docs.superexchange.dev';
 // The one hand-typed version on this page: the latest release tag. Bump with each release.
 const VERSION = 'v0.0.2';
 const TITLE = 'SuperExchange — the board’s decisions, answered in chat';
@@ -298,7 +297,7 @@ const RUN = [
     </style>
   </head>
   <body>
-    <Frame product="superexchange" cta={{ label: 'Read the README', href: README }}>
+    <Frame product="superexchange" cta={{ label: 'Read the docs', href: DOCS }}>
     <main>
       <section class="hero">
         <div class="wrap">
@@ -311,7 +310,7 @@ const RUN = [
               answers there, the board acts on it as that person.
             </p>
             <div class="cta">
-              <a class="btn btn-primary" href={README}>Read the README</a>
+              <a class="btn btn-primary" href={DOCS}>Read the docs</a>
               <a class="btn btn-ghost" href={REPO}>Source on GitHub</a>
             </div>
             <p class="status">
@@ -469,14 +468,14 @@ const RUN = [
         <div class="wrap">
           <h2 id="run">Run it</h2>
           <p class="sub">
-            From source, with Bun. Every setting is in the README; a missing or malformed one
+            From source, with Bun. Every setting is in the docs; a missing or malformed one
             stops it before it listens, naming the setting, never its value.
           </p>
           <pre aria-label="Run it from source"><code>{RUN.map((line, i) => (<>{i <= 1 || i === RUN.length - 1 ? <span class="p">$ </span> : null}{line}{'\n'}</>))}</code></pre>
           <p class="after">
             An operator then opts a board in through <code>PUT /v1/boards/:boardId</code>. Back up
             the crypto store with the database: lose it and the room keys go with it.
-            <a class="more" href={`${REPO}#run-it`}>The full setup is in the README.</a>
+            <a class="more" href={`${DOCS}/operate/run/`}>The full setup is in the docs.</a>
           </p>
         </div>
       </section>
@@ -489,8 +488,7 @@ const RUN = [
           </p>
           <ul class="facts warn">
             <li>It runs in production, but no production board has moved to it yet. A board moves one at a time, and until it does, its chat stays where it was.</li>
-            <li>SuperPipeline does not yet relay the board-room notices (reminders, escalations, quorum progress, held approvals, checks). SuperExchange is ready to say them; until the board sends them, it says nothing.</li>
-            <li>The follow-up and waiting-card sweeps cannot read the board with a service token yet, so they back off. Those cards still arrive and are answered through the relay.</li>
+            <li>It needs SuperPipeline v0.0.30 or later. That release relays the board-room notices (reminders, escalations, quorum progress, held approvals, checks) and lets SuperExchange read owed deliveries, waiting cards and a card’s checks with its own token. Against an older SuperPipeline no notice reaches the room and those sweeps back off; gates, questions and answers still work.</li>
             <li>An answer from a Matrix account that is linked to nobody does not count. The person is told how to link it, at most once a day per room.</li>
             <li>No published image, package or hosted service: you run it from source.</li>
           </ul>
