@@ -61,4 +61,4 @@ release-prep PR runs `sh .github/release/prep-release.sh vX.Y.Z`.
 sync; never edit a copy.
 
 `.github/workflows/release.yml` and `.github/release/` are copies of the shared release kit
-(estate `release/`). Change the master and sync; never edit a copy.
+(estate `release/`). Change the master and sync; never edit a copy. The exception: this repo's own release hook, `.github/release/ci-check.sh`.
