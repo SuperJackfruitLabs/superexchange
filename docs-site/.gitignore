@@ -2,3 +2,5 @@
 dist/
 node_modules/
 .wrangler/
+# The suite docs theme and the tarballs it needs, vendored like the landing page's.
+!vendor/*.tgz

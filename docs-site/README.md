@@ -17,19 +17,25 @@ forge CI builds it in its own job only when the site changed.
 
 ## What is deliberate about it
 
-**It wears the landing page's identity.** `src/styles/theme.css` maps the landing page's tokens
-onto Starlight's gray ramp and accent: azure, `#00a0d7` in dark and `#007aa2` in light, with the
-measured contrast of every accent pairing in a comment at the top. `src/components/SiteTitle.astro`
-puts the mark beside the name. `public/favicon.svg` and `public/og.png` are
-copies of `landing/public/favicon.svg` and `landing/public/og.png` (the suite frame's SuperExchange
-logo and share image); change them there and copy them here.
+**It wears the suite's docs theme**, `@superjackfruit/docs-theme` (vendored under `vendor/` with
+the frontdoor and vibekit tarballs it needs, as the landing page vendors its own). The whole design
+config is `sjlDocs({ product: 'superexchange', status: 'wet paint' })` in `astro.config.mjs`:
+vibekit's azure, the suite's faces (self-hosted), the street, status badges, Copy Markdown, the
+suite footer, the 404, the edit link and llms.txt. The home is the theme's `BentoHome`.
+`public/favicon.svg` and `public/og.png` are copies of `landing/public/favicon.svg` and
+`landing/public/og.png` (the suite frame's SuperExchange logo and share image); change them there
+and copy them here.
+
+**The sidebar uses the suite's groups**: Start, Use it, Build on it, Run it, Reference. The theme warns
+at build time when a top-level group is anything else.
 
 **It says only what ships.** Every page was written from the code (`apps/exchange/src`), the
 repository README and `deploy/`, and describes the current release. Where SuperExchange depends on
 something another product added (SuperPipeline v0.0.30's reads and notices), the page names the
 version. When the code changes, change the page.
 
-**For agents**, `starlight-llms-txt` publishes `/llms.txt`, `/llms-full.txt` and `/llms-small.txt`.
+**For agents**: `/llms.txt`, `/llms-full.txt` and `/llms-small.txt` (`starlight-llms-txt`, through the
+theme). Search is Starlight's Pagefind and the sitemap is Starlight's; the 404 page is the theme's.
 
 ## Publishing
 
