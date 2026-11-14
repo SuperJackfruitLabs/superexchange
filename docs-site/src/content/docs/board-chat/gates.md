@@ -3,8 +3,8 @@ title: Gates
 description: How a gate is posted to the board's room, every check an answer in chat must pass before it acts at SuperPipeline, and the one receipt that follows.
 ---
 
-A gate is a decision a SuperPipeline board waits on before a card moves on. SuperExchange posts it
-in the board's room and carries a person's answer back.
+A gate is a decision a SuperPipeline board waits on before a card moves on. SuperExchange brings it
+to the board's room; you answer there, and we carry that answer back without changing who made it.
 
 ## Posted once
 
@@ -33,6 +33,9 @@ step fails closed. An answer counts only when:
 Then Accounts asserts the sender for SuperPipeline (the assertion's `sub` must be the principal
 found in step 6), SuperPipeline resolves the gate as that person, and one receipt is posted.
 
+Those checks buy one precise result: the board accepts the offered decision from the person who
+actually sent it, for the gate and subject they actually saw.
+
 ## What the person is told
 
 Steps 1 to 6 refuse without a word, so a stranger or an agent can never make SuperExchange speak.
@@ -49,6 +52,9 @@ given back so another answer can act. The exception is `GATE_NOT_PENDING`: the g
 A second answer to a gate already decided is told "That was already decided — the board has it."
 
 ## The receipt
+
+Once the board has the decision, the room needs one ending—not one ending per route that noticed
+it.
 
 One receipt per gate: treaty's prose line and [`dev.superpipeline.gate.outcome.v1`](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-gate-outcome-v1/), pointing at the
 card, which a client closes the card by. It is sent in either of two cases, whichever comes first:

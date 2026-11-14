@@ -4,9 +4,12 @@ description: A manual delivery that still owes the board its live link, and a ca
 ---
 
 Two more cards reach the board room the same way a question does: recorded once, held until a
-person has joined, encrypted where the room is, posted exactly once.
+person has joined, encrypted where the room is, and posted exactly once. One closes the loop on a
+delivery; the other gives a parked card a way forward.
 
 ## Delivery follow-ups
+
+When a manual delivery is live, you can return the link from the same room that approved the work.
 
 A post approved for **manual delivery** still owes the board its live link. That arrives as
 `delivery.pending` (`com.superjackfruit.superpipeline.delivery.pending.v1`) and is recorded once
@@ -28,7 +31,12 @@ POST /v1/boards/:boardId/gates/:gateId/delivery
 
 **One receipt**: a line naming who, and `dev.superpipeline.gate.outcome.v1` at the follow-up.
 
+The board now has the live destination, and the room shows who supplied it.
+
 ## Waiting cards
+
+A waiting card needs a decision, not a nudge. You can resume it here, send it back to an earlier
+stage, or archive it.
 
 A card parked for a person (repeated failure, blocked, not authorised) arrives as
 `attention.pending` (`com.superjackfruit.superpipeline.attention.pending.v1`). It is recorded once
@@ -63,6 +71,9 @@ POST /v1/boards/:boardId/cards/:cardId/archive
 `toStageKey` is given only to resume at an earlier stage; the archive's `comment` is optional. A
 resume needs an instruction for the next attempt, at most 2730 characters.
 
+When the board accepts the action, the card leaves this wait and the room replaces its choices
+with the outcome.
+
 **One receipt** settles the card, and only one: a line in reply to the card ("Resumed by Ana — the
 board has it."), and [`dev.superpipeline.attention.outcome.v1`](https://treaty.superjackfruit.com/matrix/receipts/superpipeline-attention-outcome-v1/) referencing the card's message. An
 updated client closes the card by the outcome and draws the receipt in place of its choices. The
@@ -87,6 +98,9 @@ For both, only a person. An agent, a sender linked to nobody, another message, a
 another room is ignored without a word. A refusal the board gives is said in the room.
 
 ## The sweeps for these two
+
+The relay is the quick route; these reads are how we reconcile anything it missed or anything the
+board settled elsewhere.
 
 The follow-up and waiting-card sweeps run on the same interval as the others, each with its own
 backoff, and read each enabled board's `GET /v1/boards/:boardId/deliveries/pending` and
