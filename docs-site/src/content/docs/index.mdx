@@ -2,44 +2,70 @@
 title: SuperExchange
 description: The suite's communication server. A Matrix application service that carries SuperPipeline's board work into the board's chat room, and a person's answer back to the board.
 template: splash
-hero:
-  title: Board work in chat, and the answer back.
-  tagline: A gate, a question, a follow-up or a waiting card on a SuperPipeline board appears in that board's encrypted room. A person answers there, and the board hears it as that person.
-  actions:
-    - text: What it is
-      link: /what-it-is/
-      icon: right-arrow
-    - text: Run it
-      link: /operate/run/
-      variant: secondary
-    - text: Source
-      link: https://github.com/SuperJackfruitLabs/superexchange
-      icon: external
-      variant: minimal
+status: wet paint
 ---
 
-import { Card, CardGrid } from '@astrojs/starlight/components';
+import BentoHome from '@superjackfruit/docs-theme/components/BentoHome.astro';
+import FlowSteps from '@superjackfruit/docs-theme/components/FlowSteps.astro';
+import WetPaint from '@superjackfruit/docs-theme/components/WetPaint.astro';
+import JackAside from '@superjackfruit/docs-theme/components/JackAside.astro';
+
+<BentoHome
+  claim="Board work in chat, and the answer back."
+  sub="A gate on a SuperPipeline board turns up in that board's encrypted room, exactly once. A person answers there, Accounts confirms they are a person, and the board records the decision as them, with one receipt. An agent cannot answer a gate, however nicely it asks. There's a test for that."
+  actions={[
+    { text: 'How it works', link: '/how-it-works/' },
+    { text: 'What it is', link: '/what-it-is/', variant: 'secondary' },
+  ]}
+  quickstart={{
+    command: 'git clone https://github.com/SuperJackfruitLabs/superexchange && cd superexchange && bun install && bun test apps/exchange/test/gate-answer.test.ts',
+    label: 'Quick start: answer a gate, with the suite faked',
+    note: "Needs Bun (the repository pins 1.2.8) and nothing else: the board, Accounts and the homeserver are the tests' in-process fakes. 51 checks, from a person's answer acting once with one receipt to an agent being refused. To carry a real board's gates, start with Run it.",
+  }}
+  agent={{ task: "Then explain how SuperExchange would carry my board's gates and questions into chat, and list what I need before I opt a board in." }}
+  ask={{ examples: ["Why didn't my answer in chat count?", 'What happens when a gate is decided on the web?', 'Can an agent answer a gate?', 'What do I need before I opt a board in?'] }}
+  flowTitle="How a gate reaches the room and comes back (step through it; it waits for you)"
+>
+  <FlowSteps
+    label="Gate step"
+    steps={[
+      { label: 'Pending', body: 'SuperPipeline publishes gate.pending to the event relay, which delivers it to POST /v1/relay/events, signed. SuperExchange keeps it only for a board an operator opted in; any other board is answered ignored, so the relay does not retry it.', items: [{ text: 'gate.pending', card: true }] },
+      { label: 'Room', body: "The board's first card makes its room, #superexchange_board_<board id>, end-to-end encrypted from its first state event. The board's people are invited, each on their own.", items: [{ text: 'board room', card: true }] },
+      { label: 'Posted', body: 'An invite is not enough: the gate waits until someone outside @superexchange_* has joined. Then it is posted once, as the gate.v2 prose and the gate card, under transaction ids derived from the gate, so a retry cannot post it twice.', items: [{ text: 'invited, waiting', out: true }, { text: 'joined → posted', win: true }] },
+      { label: 'Answer', body: 'A person answers with a gate decision that references the card. Accounts says who sent it, and only a person may answer: an agent, or a sender linked to nobody, does not count.', items: [{ text: 'agent', out: true }, { text: 'Ana (a person)', win: true }] },
+      { label: 'Receipt', body: 'Accounts asserts Ana for SuperPipeline, and the board resolves the gate as her. One receipt follows. A gate decided on the web or in supi instead is found by the sweep (every 60 seconds by default) and gets the same one receipt.', items: [{ text: 'resolved as Ana ✓', win: true }] },
+    ]}
+  />
+</BentoHome>
 
 ## One exchange, carried both ways
 
-<CardGrid>
-  <Card title="Out to the room">
-    The board's event arrives from the suite's event relay. SuperExchange makes the board's room
-    once, invites its people, waits for one of them to join, and posts the card exactly once,
-    encrypted.
-  </Card>
-  <Card title="Back to the board">
-    A person answers in the room. Accounts says who they are; only a person may answer. The
-    answer acts at SuperPipeline as that person, and one receipt is posted.
-  </Card>
-  <Card title="Nothing lost between">
-    A sweep asks every opted-in board what it still waits on: cards the relay missed are posted,
-    and a gate decided on the web or in `supi` is settled in chat with the same one receipt.
-  </Card>
-</CardGrid>
+**Out to the room.** The board's event arrives from the suite's event relay. SuperExchange makes the
+board's room once, invites its people, waits for one of them to join, and posts the card exactly
+once, encrypted. See [Board rooms](/board-chat/rooms/).
 
-SuperExchange is early: v0.0.2 runs in production, and no production board has moved to it yet.
-[Status and limits](/status/) says exactly what works and what is still owed by other products.
+**Back to the board.** A person answers in the room. Accounts says who they are; only a person may
+answer. The answer acts at SuperPipeline as that person, and one receipt is posted. See
+[Gates](/board-chat/gates/).
 
-For agents, the same docs are published as plain text: [`/llms.txt`](/llms.txt) indexes them, and
+**Nothing lost between.** A sweep asks every opted-in board what it still waits on: cards the relay
+missed are posted, and a gate decided on the web or in `supi` is settled in chat with the same one
+receipt. See [The sweeps](/board-chat/sweeps/).
+
+**Nothing requires it.** SuperPipeline stays a board without it, and its gates are still decided on
+the web and in `supi`. People read and answer in any Matrix client. See
+[What SuperExchange is](/what-it-is/).
+
+<WetPaint>
+  SuperExchange is new. Each release deploys it to production (v0.0.3 since 13 November 2026), and
+  no production board has moved to it yet; boards move one at a time. [Status and limits](/status/)
+  says exactly what works and what is still owed by other products.
+</WetPaint>
+
+<JackAside>
+  I read these docs so you don't have to read all of them at once. Ask me in the box up top, and if
+  the answer isn't in here I'll say so rather than make one up.
+</JackAside>
+
+For agents, the same docs are plain text: [`/llms.txt`](/llms.txt) indexes them, and
 [`/llms-full.txt`](/llms-full.txt) is every page in one file.
