@@ -18,9 +18,10 @@ presented together:
    not recent);
 2. an OpenID token from their homeserver, which Accounts verifies with that homeserver.
 
-In SuperMessage, open **Settings → Account → Link to your Super Jackfruit account**. The app gets
-the OpenID token from the homeserver and opens Accounts' `/link/matrix` page with it; sign in if
-needed, then confirm. Any Matrix client that can open that page the same way can link.
+In SuperMessage on Apple, open the **Account** panel and choose **Link to your Super Jackfruit
+account**. The app gets the OpenID token from the homeserver and opens Accounts' `/link/matrix`
+page with it; sign in if needed, then confirm. Any Matrix client that can open that page the same
+way can link.
 
 Accounts now has both proofs and records the link. The 15-minute safety hold below starts at that
 moment.
