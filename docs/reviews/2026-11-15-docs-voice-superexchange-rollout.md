@@ -1,0 +1,99 @@
+# Claims ledger — SuperExchange docs voice rollout
+
+Status: draft-stage evidence for the 19-page voice rollout.
+
+## Immutable revisions and scope
+
+- PR base: `8ef209ca934803d325479ff2b57b16a614b0397c` (includes the shared docs theme from SuperExchange PR #28).
+- Voice guide: `SuperJackfruitLabs/sketchbook@29690e4397467bcf92ea7ef7e88b4e89cffba88f`, `ideas/2026-11-14-docs-voice-guide-v1/README.md`.
+- Reference standard: `SuperJackfruitLabs/superdispatch@5445cb546e5a861097e2f8fe9a3c1b1c6cb384b7`, especially `start/first-placement.mdx`, `run/running-it.md`, `run/opting-a-board-in.md`, `placement/`, and `records/`.
+- Rollout: all 19 published pages under `docs-site/src/content/docs/` and this ledger.
+- Product code evidence below is pinned to the PR base. This rollout changes no product code, site configuration, component, style, package manifest, lockfile, or deployment file.
+
+## Voice review
+
+| Rubric row | Result | Evidence |
+| --- | --- | --- |
+| Narrator and momentum | pass | All 19 pages now use a direct `we`/`you` narrator appropriate to their kind. Task pages guide an action; concept and reference pages use a lighter framing voice. |
+| Step payoffs | pass | `operate/run.md`, `operate/boards.md`, `operate/linking.md`, and `operate/production.md` state the result or safety reason after each reader action. `how-it-works.md` is a conceptual numbered flow, not a reader-action tutorial, but its stages now close with the consequence where useful. |
+| Tutorial running gag | pass | No page in this site is a first-use tutorial or quick start. No running gag was added. The home keeps its existing light phrasing; task pages use only one-off narrative asides. |
+| Candour | pass | Startup refusal, encrypted-room recovery, plaintext limits, unreadable-board behaviour, version dependencies, non-migratable rooms, external ownership, and backup consequences remain plain and precede any light prose. |
+| Exact and safety material | pass | Commands, YAML, JSON, HTTP examples, route/setting/event tables, enum-like values, quoted responses, warnings, and recovery instructions remain literal and humour-free. The start command and health request were separated into two terminal blocks so the example can actually be followed. |
+| Vocabulary and privacy | pass | Official product casing is preserved; `workspace` keeps its organization meaning; examples use loopback, `example.test`, `example` hosts, synthetic ids, and synthetic Matrix users. No private host, person, agent, team, credential, customer, or message was added. |
+| Originality | pass | The direct guide, action payoff, and lighter reference framing borrow the approved technique without copying RedwoodJS or SuperDispatch wording, jokes, examples, or metaphors. |
+| Claims | pass with declared exceptions | Every in-repository claim is mapped to code, tests, configuration, or release files below. Cross-product and live-estate claims that the SuperExchange base cannot prove are listed as `UNVERIFIED`; none is treated as false merely because it is absent here. |
+
+## Exact-material inventory
+
+- `index.mdx`: Bento command, flow event/route/type/default strings, version/date, links, and component structure.
+- `operate/run.md`: registration YAML, environment/start command, health request and response, settings, scopes, routes, versions, ports, image/base details, and boot order.
+- `operate/settings.md`: required/optional tables, defaults, ranges, token-generation command, bearer-header syntax, and warning-equivalent failure language.
+- `operate/boards.md`: auth/response text, route table, request/response JSON, field limits, id shapes, size limit, curl example, migration setting, and disable semantics.
+- `operate/linking.md`: routes, UI path, proof list, 15-minute limit, quoted user-facing recovery text, and principal kinds.
+- `operate/production.md`: workflow/script names, deployment order, rollback and recovery instructions, paths, ports, networks, settings, and backup table.
+- `board-chat/*.md`: event/content type names, routes, fields, limits, statuses, quoted messages, warnings, recovery instructions, and behavioural lists.
+- `reference/*.md`: all tables and exact type, route, method, scope, credential, response, field, and limit material.
+- Concept prose in `what-it-is.md`, `how-it-works.md`, and `status.md` keeps all identifiers, defaults, versions, boundaries, and limitations exact.
+
+## Claims checked at the PR base
+
+Each row covers every material command, route, setting, default, field, enum-like value, limit, and behavioural statement on that page. Line ranges point to the implementation or repository configuration at the base; tests are named where they provide the clearest executable evidence.
+
+| Page | Material checked | Base evidence |
+| --- | --- | --- |
+| `index.mdx` | Quick-start command and Bun pin; relay route and signature; opt-in boundary; room creation/invites/join hold/encryption; person-only gate answer and one receipt; 60-second sweep; v0.0.3 date | `.bun-version:1`; `apps/exchange/test/gate-answer.test.ts:1-1107`; `apps/exchange/src/routes/relay.ts:1-49,89-224`; `apps/exchange/src/board-chat/rooms.ts:4-18,104-185`; `apps/exchange/src/board-chat/gate-answer.ts:1-520`; `apps/exchange/src/board-chat/gate-receipt.ts:1-137`; `apps/exchange/src/config.ts:42-47,212-245`; `CHANGELOG.md:6-23`. The live claim that no production board has moved is `UNVERIFIED` below. |
+| `what-it-is.md` | Product boundary; carried card/notice kinds; event relay, namespace, encryption, treaty packages; no dependency on AgentPod; Bun/SQLite/crypto/MIT claims | `AGENTS.md:3-31`; `apps/exchange/src/main.ts:1-48,50-196`; `apps/exchange/src/routes/relay.ts:1-49,120-223`; `apps/exchange/src/board-chat/index.ts:1-220`; `apps/exchange/src/store/index.ts:1-117`; `package.json:1-25`; `LICENSE:1-21`. |
+| `how-it-works.md` | Signed binary CloudEvent; enabled-board intake; one room, names, encryption, per-person invites and join hold; transaction-id idempotence; answer identity/person checks; assertion audience; one receipt; boot/60-second sweep | `apps/exchange/src/routes/relay.ts:1-23,89-224`; `apps/exchange/src/board-chat/rooms.ts:4-18,30-31,104-185`; `apps/exchange/src/board-chat/gate-card.ts:1-250`; `apps/exchange/src/board-chat/gate-answer.ts:1-430`; `apps/exchange/src/board-chat/accounts.ts:1-17,120-283`; `apps/exchange/src/board-chat/gate-receipt.ts:1-137`; `apps/exchange/src/main.ts:248-285`; `apps/exchange/src/config.ts:42-47`. |
+| `status.md` | Current release; supported cards/notices/actions/sweeps; once-daily link hint; release snapshot/rollback; plaintext-room and namespace-query gaps; crypto-store consequence; approval/escalation workspace boundary | `CHANGELOG.md:6-45`; `apps/exchange/src/board-chat/index.ts:1-220`; `apps/exchange/src/board-chat/card-answer.ts:1-128`; `apps/exchange/src/board-chat/notices.ts:1-210`; `apps/exchange/src/appservice/transactions.ts:1-221`; `apps/exchange/src/appservice/crypto.ts:1-613`; `deploy/production/release.sh:1-86`. SuperPipeline version history, live board adoption, and the external 15-minute link hold are `UNVERIFIED` below. |
+| `operate/run.md` | Bun version; required systems/settings/scopes; appservice registration keys and namespace constraints; start command; default health route/port/body; boot order; Docker image/user/port/data/health behaviour | `.bun-version:1`; `apps/exchange/src/config.ts:8-99,108-245`; `apps/exchange/src/routes/index.ts:1-107`; `apps/exchange/src/main.ts:1-80,87-301`; `apps/exchange/src/appservice/client.ts:1-57,150-321`; `apps/exchange/src/appservice/crypto-transport.ts:1-126`; `apps/exchange/Dockerfile:1-20`. The split-terminal correction is recorded below. |
+| `operate/settings.md` | All required and optional setting names; defaults; URL, credential, hash, absolute-path, enum, staging-prefix, passphrase, port, and sweep-range validation; constant-time token comparison | `apps/exchange/src/config.ts:8-108,110-247,260-284`; `apps/exchange/test/config.test.ts:1-304`. |
+| `operate/boards.md` | Bearer hash/constant-time/401 behaviour; methods/routes/responses; body fields, id shapes, 50-invitee and 64 KiB limits; duplicate removal; enabled/disabled persistence; lazy room creation; invite updates | `apps/exchange/src/routes/boards.ts:1-108`; `apps/exchange/src/board-chat/boards.ts:1-60`; `apps/exchange/src/routes/body.ts:1-15`; `apps/exchange/src/board-chat/rooms.ts:104-185`; `apps/exchange/src/store/boards.ts:1-97`; `apps/exchange/test/boards.test.ts:1-169`. AgentPod migration behaviour is `UNVERIFIED` below. |
+| `operate/linking.md` | Identity/principal lookups; human-only paths; assertion subject match; unlinked hint cadence/text; Accounts-unreachable distinction | `apps/exchange/src/board-chat/accounts.ts:1-17,120-283`; `apps/exchange/src/board-chat/card-answer.ts:1-128`; `apps/exchange/src/board-chat/gate-answer.ts:1-520`; `apps/exchange/test/gate-answer.test.ts:1-1107`; `apps/exchange/test/board-chat.test.ts:1-1028`. The owning Accounts/SuperMessage link flow and 15-minute hold are `UNVERIFIED` below. |
+| `operate/production.md` | Tag-only production release, forge-CI fallback, release notes, deploy/health/homeserver checks, online SQLite snapshot and integrity check, rollback across migrations, plaintext forced off, paths/ports/mounts/network names and backup handling | `.github/workflows/release.yml:1-597`; `.github/release-config.json:1-11`; `.github/workflows/staging.yml:1-42`; `deploy/production/release.sh:1-86`; `deploy/production/compose.yml:1-46`. Live host provisioning, reachability, and backup operation are `UNVERIFIED` below. |
+| `board-chat/rooms.md` | Treaty names; one room per board; room name/topic; speaker power; alias recovery; initial encryption/no conversion; invite limit and one-by-one invites; human-join hold/retries; room/source checks | `apps/exchange/src/board-chat/rooms.ts:4-18,30-31,104-185`; `apps/exchange/src/board-chat/boards.ts:24-60`; `apps/exchange/src/board-chat/card-post.ts:1-90`; `apps/exchange/src/board-chat/room-sender.ts:38-75`; `apps/exchange/test/board-chat.test.ts:1-1028`. |
+| `board-chat/encryption.md` | One appservice-login device; dropped access token; crypto path/passphrase; missing-store/device behaviour; Megolm room state and recipients; pending-decrypt retry, one-hour age and 200-row cap; registration keys; staging-only plaintext rules | `apps/exchange/src/appservice/client.ts:1-57,220-236`; `apps/exchange/src/appservice/crypto.ts:1-613`; `apps/exchange/src/appservice/open-machines.ts:1-57`; `apps/exchange/src/board-chat/room-sender.ts:38-75`; `apps/exchange/src/config.ts:60-99,165-201`; `apps/exchange/test/crypto.test.ts:1-611`. |
+| `board-chat/gates.md` | `gate.pending`; gate.v2/card post and retry; all eight answer guards; v1/v2 parsing; human-only identity/assertion; subject/option binding; claim/refusal handling; exactly-one receipt and external settlement; quorum/pull-back notices | `apps/exchange/src/board-chat/gates.ts:1-43`; `apps/exchange/src/board-chat/gate-card.ts:1-250`; `apps/exchange/src/board-chat/gate-answer.ts:1-520`; `apps/exchange/src/board-chat/gate-offer.ts:1-52`; `apps/exchange/src/board-chat/gate-receipt.ts:1-137`; `apps/exchange/src/board-chat/gate-sweep.ts:1-213`; `apps/exchange/test/gate-answer.test.ts:1-1107`. |
+| `board-chat/questions.md` | `elicitation.pending`; question.v2/v1 content; workspace filter for approvals; structured answer and typed option matching; subject-bound typed-approval refusal; principal rules; quoted refusals/receipt; sweep settlement | `apps/exchange/src/board-chat/questions.ts:1-122`; `apps/exchange/src/board-chat/question-card.ts:1-250`; `apps/exchange/src/board-chat/question-answer.ts:1-68,127-508`; `apps/exchange/src/board-chat/question-sweep.ts:1-176`; `apps/exchange/src/board-chat/superpipeline.ts:83-112`; `apps/exchange/test/questions.test.ts:1-1535`. |
+| `board-chat/follow-ups-and-waiting-cards.md` | Delivery/attention event types and once keys; treaty cards/options; live-URL/automatic rules; waiting-card age and live-state boundary; resume/archive bodies, expected wait, optional fields and 2,730-character instruction cap; receipts; settlement; person-only answers; service-read sweeps | `apps/exchange/src/board-chat/followups.ts:1-47`; `apps/exchange/src/board-chat/followup-card.ts:1-218`; `apps/exchange/src/board-chat/followup-answer.ts:1-218`; `apps/exchange/src/board-chat/attention.ts:1-46`; `apps/exchange/src/board-chat/attention-card.ts:1-342`; `apps/exchange/src/board-chat/attention-answer.ts:1-267`; `apps/exchange/src/board-chat/superpipeline.ts:119-188,420-450`; `apps/exchange/test/followups.test.ts:1-1632`. |
+| `board-chat/notices.md` | Seven notice kinds and treaty content; once/retry/reply rules; settled/unposted ignore rules; labels; escalation recipients and checks read; admin-join repost; pull-back/override types/routes/comment limit/person assertion/refusals | `apps/exchange/src/board-chat/notices.ts:1-210`; `apps/exchange/src/board-chat/notice-post.ts:1-520`; `apps/exchange/src/board-chat/escalation-repost.ts:1-380`; `apps/exchange/src/board-chat/accounts.ts:83-85,211-240`; `apps/exchange/src/board-chat/pull-back.ts:1-298`; `apps/exchange/src/board-chat/superpipeline.ts:204-243`; corresponding notice and pull-back tests. |
+| `board-chat/sweeps.md` | Boot/interval/range; four independent sweeps/routes; service-token mint/cache; gate reconciliation and absence rule; question/follow-up/attention settlement; unreadable-board fail-closed behaviour; per-pass backoff to 8x; non-overlap; notice retry boundary | `apps/exchange/src/config.ts:42-47,212-245`; `apps/exchange/src/main.ts:164-173,248-285`; `apps/exchange/src/board-chat/sweeper.ts:1-54`; `apps/exchange/src/board-chat/gate-sweep.ts:1-213`; `apps/exchange/src/board-chat/question-sweep.ts:1-176`; `apps/exchange/src/board-chat/followup-sweep.ts:1-180`; `apps/exchange/src/board-chat/attention-sweep.ts:1-190`. |
+| `reference/events.md` | Eleven relay event types; every outbound card/receipt/notice content type; encrypted envelope; seven inbound structured/typed answer types; reference/room rules | `apps/exchange/src/routes/relay.ts:1-23,120-223`; `apps/exchange/src/board-chat/notices.ts:1-120`; `apps/exchange/src/board-chat/gate-card.ts:1-100`; `apps/exchange/src/board-chat/question-card.ts:1-100`; `apps/exchange/src/board-chat/followup-card.ts:1-30`; `apps/exchange/src/board-chat/attention-card.ts:1-40`; `apps/exchange/src/board-chat/pull-back.ts:1-20`; treaty predicates/content builders are imported from `@superjackfruitlabs/treaty-matrix-events`. |
+| `reference/routes.md` | Complete served route families; methods; health body; appservice auth/status behaviour; transaction idempotence and crypto ordering; relay signature/body limit/status matrix; operator routes | `apps/exchange/src/routes/index.ts:1-107`; `apps/exchange/src/appservice/transactions.ts:1-221`; `apps/exchange/src/routes/relay.ts:1-49,89-224`; `apps/exchange/src/routes/boards.ts:1-108`; `apps/exchange/test/routes.test.ts:1-77`; `apps/exchange/test/appservice.test.ts:1-655`; `apps/exchange/test/relay.test.ts:1-205`; `apps/exchange/test/boards.test.ts:1-169`. |
+| `reference/calls.md` | Every Accounts, SuperPipeline, and homeserver call; credentials/audiences/scopes; answer bodies; service-read routes; appservice identity/device parameters and crypto requests | `apps/exchange/src/board-chat/accounts.ts:1-17,120-283`; `apps/exchange/src/board-chat/superpipeline.ts:1-27,52-243,330-450`; `apps/exchange/src/appservice/client.ts:1-57,150-321`; `apps/exchange/src/appservice/crypto-transport.ts:1-126`; `apps/exchange/src/main.ts:87-173`. |
+
+## Corrections
+
+No factual change is silent.
+
+| Old material | New material | Evidence |
+| --- | --- | --- |
+| `status.md` described v0.0.2 as the current production release. | It now identifies v0.0.3 (2026-11-13) as current and v0.0.2 as the first production release. | `CHANGELOG.md:8-25`. |
+| `operate/run.md` placed the foreground `bun apps/exchange/src/main.ts` process and the health request in one sequential shell block, so the request could not run while the service remained in the foreground. | Startup remains in the first terminal; the health request is explicitly run from a second terminal. | `apps/exchange/src/main.ts:203-236,288-301` starts a long-running `Bun.serve` process and installs shutdown handlers. |
+
+The bearer-token wording changes in `operate/settings.md` and `operate/boards.md` are exactness edits, not behaviour changes: both now use the same neutral `<token>` placeholder while the runnable curl example continues to use `$OPERATOR_TOKEN`. The parser remains `Bearer <non-space token>` (`apps/exchange/src/routes/boards.ts:32-45`).
+
+## UNVERIFIED claims and questions asked on the card
+
+The following statements may be true, but this repository is not their owner. They remain in the pages and are not presented as disproved:
+
+- **Live adoption:** no production board has moved to SuperExchange yet (`index.mdx`, `status.md`).
+- **Live infrastructure/provisioning:** production is loopback-only with no public hostname; the documented host paths, relay Docker network, provisioning ownership, and active backup operation (`operate/boards.md`, `operate/production.md`). Repository compose/release files prove the intended deployment shape, not the live estate.
+- **AgentPod migration:** the exact `BOARD_CHAT_MOVED_BOARDS` behaviour and return path in `operate/boards.md` belong to AgentPod.
+- **Accounts and SuperMessage link flow:** the self-link UI/proofs, configured-homeserver rule, single-use rule, 15-minute hold, and operator move behaviour in `operate/linking.md` and `status.md` belong to Accounts/SuperMessage. SuperExchange proves only how it interprets an identity lookup.
+- **SuperPipeline release ownership:** the statement that v0.0.30 introduced the listed service-token reads and notice relays belongs to SuperPipeline. SuperExchange proves the routes/scopes it calls and its fail-closed behaviour.
+
+Questions naming these gaps were posted on `card_70933e940e2448c2` during the draft run. No answer had been received when this ledger was written.
+
+## Mechanical claims ratchet
+
+The repository has no docs claims checker at the PR base: `docs-site/package.json` defines only `dev`, `build`, `preview`, and `check`, and there is no `docs-site/scripts/check-claims.*`. The rollout therefore does not pretend to extend a nonexistent ratchet. The existing TypeScript tests cover the route, settings, board-chat, store, and encryption contracts cited above.
+
+## Real docs-only CI checks
+
+The docs-only lane in `.forgejo/workflows/ci.yml:68-83` runs these commands with Node 24:
+
+- `npm ci`: pass — 431 packages added, 432 audited; npm reported 5 dependency vulnerabilities (2 moderate, 3 high) and one unapproved install script warning for `esbuild@0.28.2`; exit 0. This rollout does not change package files.
+- `npm run check`: pass — Astro checked 4 files with **0 errors, 0 warnings, 0 hints**; exit 0.
+- `npm run build`: pass — **20 pages built**; Pagefind indexed 20 HTML files; sitemap generated; exit 0. Astro emitted non-failing warnings for the existing `use astro:head-inject` bundling directive and empty/missing `i18n` collection.
+
+The home-page quick start was also exercised after `bun install --frozen-lockfile`: `bun test apps/exchange/test/gate-answer.test.ts` passed **51 tests, 0 failed**, with 136 expectations. The first attempt before installing the root workspace failed honestly with a missing `@superjackfruitlabs/treaty-matrix-events` module; the documented command begins with `bun install`, and the complete documented sequence passed.
