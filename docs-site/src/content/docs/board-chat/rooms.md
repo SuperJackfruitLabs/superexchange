@@ -3,8 +3,8 @@ title: Board rooms
 description: One room per opted-in board, made once by SuperExchange's speaker, encrypted, its people invited, and why a card waits for someone to join.
 ---
 
-Each board SuperExchange carries has one room. Every card, notice and receipt for that board is
-said there.
+Each board SuperExchange carries gets one room. That gives you one place for every card, notice,
+and receipt from the board—and gives SuperExchange one room in which an answer can count.
 
 ## Names
 
@@ -24,6 +24,9 @@ appservice can speak in or claim the other's room.
 
 ## When it is made
 
+We wait for actual work before making the room. Opting in records the board; its first card creates
+the conversation.
+
 The room is made the first time a card for the board is posted, not when the board is opted in.
 The speaker is registered and named once per process. If the alias is already taken (an earlier
 attempt made the room and did not live to record it), the room behind the alias is the board's
@@ -34,6 +37,9 @@ A new room is created with `m.room.encryption` (Megolm) in its initial state, un
 it, and a room is never converted. See [Encryption](/board-chat/encryption/).
 
 ## Who is invited
+
+You choose the initial audience in the board's `invitees`; SuperExchange keeps that audience in
+step as new cards arrive.
 
 The board's `invitees`, as the operator set them when opting the board in (at most 50 Matrix
 ids). The first rides on the room's creation; the rest are invited one by one, so one invite the
@@ -52,7 +58,13 @@ transactions; when none is on record, the room's joined members are asked once.
 
 Held cards are tried again at boot, when a person joins, and by every sweep.
 
+The result is intentionally uneventful: nobody misses the first card merely because their invite
+had not become a join yet.
+
 ## What a room will not do
+
+The room keeps three hard boundaries. They prevent a setting change or stray answer from quietly
+changing what the room means.
 
 - **Plaintext into an encrypted room:** never, whatever the setting.
 - **Speak in a plaintext room while plaintext rooms are off:** nothing is posted there, encrypted
