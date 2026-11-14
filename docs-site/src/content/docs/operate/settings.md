@@ -3,9 +3,9 @@ title: Settings
 description: Every environment variable SuperExchange reads, which are required, their defaults, and the checks it makes before it listens.
 ---
 
-SuperExchange reads its settings once, at boot, from the environment. A missing or malformed setting
-stops it before it listens, and the error names the setting, never its value. Every problem is
-listed at once.
+We give SuperExchange its settings once, at boot, through the environment. A missing or malformed
+setting stops it before it listens, and the error names the setting, never its value. Every problem
+is listed at once, so one repair pass can clear the whole set.
 
 ## Required
 
@@ -41,4 +41,8 @@ OPERATOR_TOKEN=$(openssl rand -hex 32)
 printf %s "$OPERATOR_TOKEN" | shasum -a 256 | cut -d' ' -f1   # SUPEREXCHANGE_OPERATOR_TOKEN_SHA256
 ```
 
-The token is then presented as `Authorization: Bearer <token>` on [`/v1/boards`](/operate/boards/).
+The printed digest is the setting; the original token is what you present to the operator API. The
+service can now authenticate a request without storing the bearer token itself.
+
+The token is presented as `Authorization: Bearer <token>` on
+[`/v1/boards`](/operate/boards/).
