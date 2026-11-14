@@ -4,16 +4,19 @@ description: The suite's communication server, the Matrix application service fo
 ---
 
 SuperExchange is the suite's communication server: a Matrix application service that carries
-board work into chat and the answers back. A gate, a question, a follow-up or a waiting card on a
-SuperPipeline board appears in that board's room; the board's reminders, escalations and other
-notices about that work are said there; and an answer given in chat reaches the board, as the
-person who gave it.
+board work into chat and the answers back. You can meet a gate, question, follow-up, or waiting
+card in the board's room instead of keeping one eye on another screen. The board's reminders,
+escalations, and other notices appear there too, and an answer given in chat reaches the board as
+the person who gave it.
 
 It takes those events from the suite's event relay, and it speaks in board rooms under its own
 registration on the homeserver, with its own namespace (`@superexchange_*`, `#superexchange_*`)
 and its own encryption keys.
 
 ## What it does
+
+We keep the job deliberately narrow: carry the conversation, preserve the person behind the
+answer, and keep the board authoritative.
 
 - **Carries board work into the board's room.** Gates, questions (an agent's question or a
   SuperToolkit approval request), delivery follow-ups and waiting cards, each posted once, in the
@@ -28,6 +31,9 @@ and its own encryption keys.
   posted and a gate decided elsewhere is settled in chat. See [The sweeps](/board-chat/sweeps/).
 
 ## What it is not
+
+That narrow job leaves some tempting territory alone. The boundaries below are part of the
+product, not a list of features waiting to escape.
 
 - **Not agent puppeting.** Agents speaking in their own station rooms, inbound prompts and
   outbound turns stay in AgentPod, as its optional Matrix adapter. SuperExchange's namespace and
@@ -48,6 +54,9 @@ and its own encryption keys.
 SuperPipeline remains a board without SuperExchange: its gates are still decided on the web and in
 `supi`. SuperMessage remains a plain Matrix client for any homeserver. AgentPod's puppeting works
 with SuperExchange absent.
+
+So if SuperExchange stops, you lose the chat path—not the board, its decisions, or an agent's own
+Matrix connection.
 
 SuperExchange itself needs a SuperPipeline, the [event relay](https://treaty.superjackfruit.com/relay/), a Matrix homeserver and the
 organization plane (Accounts). It needs no AgentPod fleet.

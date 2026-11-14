@@ -4,7 +4,8 @@ description: The path of one gate from the board to the room and back, and the p
 ---
 
 Every kind of card SuperExchange carries follows the same path. A gate is the first and the
-fullest, so this page follows one gate.
+fullest, so we will follow one from the board to the room and back. Nine stops sounds like a tour;
+fortunately, most of them are guardrails.
 
 ## 1. The board's event reaches SuperExchange
 
@@ -20,6 +21,8 @@ other board is answered `ignored`, so the relay does not retry it.
 A kept gate is recorded once. A redelivery of the same gate is recorded once too, and offered for
 posting again if it was not posted yet.
 
+At this point the gate is safely inside SuperExchange, but nothing has been shown to a person yet.
+
 ## 2. The board's room is made once
 
 The first card for a board makes its room: spoken by `@superexchange_board` (shown as
@@ -28,17 +31,23 @@ The first card for a board makes its room: spoken by `@superexchange_board` (sho
 The board's invitees are invited, each on their own, so one invite the homeserver refuses costs
 nobody else the room. See [Board rooms](/board-chat/rooms/).
 
+Now the board has one room of its own, with encryption decided before the first card arrives.
+
 ## 3. The gate is held until a person has joined
 
 An invite is not enough: a card sent before anybody can read it is a card nobody answers. The gate
 waits until someone outside `@superexchange_*` has joined. It is tried again at boot, when a person
 joins, and by the sweep.
 
+That wait buys us a simple result: the first card is not posted into an empty room.
+
 ## 4. It is posted exactly once
 
 Two messages, both built by treaty: the gate.v2 prose message, and the gate card. Each is sent
 under a transaction id derived from the gate, so a retry is answered by the homeserver with the
 first send. In an encrypted room, the room key is shared with everyone joined or invited first.
+
+The person sees one gate, even if delivery needed more than one attempt.
 
 ## 5. A person answers in the room
 
@@ -59,6 +68,9 @@ Accounts issues an assertion for that person with SuperPipeline as its audience,
 resolves the gate at SuperPipeline with it. The board records the decision as the person, not as
 SuperExchange.
 
+The board therefore records the actual person—not the communication service that carried their
+answer.
+
 ## 8. One receipt
 
 A prose line and `dev.superpipeline.gate.outcome.v1`, which a client closes the card by. An answer
@@ -71,6 +83,9 @@ enabled board what it still waits on, with its own service token. A gate the rel
 is posted; a gate decided on the web, in `supi` or anywhere else is settled in chat with the same
 receipt an answer would have posted. The sweep and the answer share one claim, so a gate has one
 receipt whichever path settles it. See [The sweeps](/board-chat/sweeps/).
+
+And that is the return trip complete: one board decision, one room receipt, and no second ending
+invented by the sweep.
 
 ## The parts
 
