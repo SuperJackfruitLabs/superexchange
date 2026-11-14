@@ -3,6 +3,7 @@ title: Events carried
 description: The CloudEvents SuperExchange takes from the relay, and the Matrix content it posts and reads in board rooms. Every shape is treaty's.
 ---
 
+Use this page when you need to trace a type from relay delivery to room content or back again.
 SuperExchange defines none of these. The CloudEvents types and their bodies are SuperPipeline's,
 catalogued by [Treaty](https://treaty.superjackfruit.com/events/); the Matrix content is treaty's board-room contract,
 [`@superjackfruitlabs/treaty-matrix-events`](https://www.npmjs.com/package/@superjackfruitlabs/treaty-matrix-events),
@@ -10,6 +11,8 @@ with one JSON Schema per type ([Treaty's Matrix catalogue](https://treaty.superj
 published beside the old one.
 
 ## In from the relay
+
+We accept the following board events. Every exact type stays under Treaty's versioned contract.
 
 Every type is `com.superjackfruit.superpipeline.<event>.v1`.
 
@@ -29,6 +32,8 @@ Every type is `com.superjackfruit.superpipeline.<event>.v1`.
 
 ## Out to the room
 
+Once accepted, the event becomes one or more of these exact Matrix contents.
+
 | Card or message | Content |
 | --- | --- |
 | Gate | The [gate.v2](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate-v2/) prose message and the [gate card](https://treaty.superjackfruit.com/matrix/cards/superpipeline-gate/) |
@@ -46,6 +51,8 @@ Every type is `com.superjackfruit.superpipeline.<event>.v1`.
 In an encrypted room each is sent as `m.room.encrypted`.
 
 ## In from the room
+
+The return path is just as explicit: these are the answer types SuperExchange will consider.
 
 | Answer | Answers |
 | --- | --- |

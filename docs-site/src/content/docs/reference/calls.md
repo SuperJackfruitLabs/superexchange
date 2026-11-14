@@ -3,10 +3,14 @@ title: What it calls
 description: Every request SuperExchange makes to Accounts, SuperPipeline and the homeserver, with the credential each is made with and the scope it needs.
 ---
 
-SuperExchange reads SuperPipeline and Accounts only through their public APIs, and owns neither
-one's data.
+Use this page to audit SuperExchange from the other side of the socket: every request it makes,
+the credential it carries, and the reason it exists. We read SuperPipeline and Accounts only
+through their public APIs and own neither one's data.
 
 ## Accounts (`ORG_PLANE_URL`)
+
+Accounts gives us identity and short-lived authority; it does not hand SuperExchange a copy of the
+organization plane.
 
 Every call carries SuperExchange's service credential (`ORG_PLANE_SERVICE_CREDENTIAL`) as a bearer.
 A plane that cannot answer is never read as "nobody".
@@ -21,6 +25,9 @@ A plane that cannot answer is never read as "nobody".
 | `POST /api/token/service` `{ audience }` | SuperExchange's own token for SuperPipeline (audience `SUPERPIPELINE_URL`), held until shortly before it expires |
 
 ## SuperPipeline (`SUPERPIPELINE_URL`)
+
+Calls to the board split cleanly by authority: the person's assertion for an answer, or the
+service's own token for reconciliation reads.
 
 ### As the person who answered
 
@@ -50,6 +57,9 @@ With its own service token, on SuperPipeline's service routes.
 | `GET /v1/boards/:boardId/cards/:cardId/checks` | `gates:read` | An escalation of overdue checks, and re-posting for a joining admin (SuperPipeline v0.0.30 or later) |
 
 ## The homeserver (`MATRIX_HOMESERVER_URL`)
+
+The homeserver calls above carry the Matrix mechanics: room creation, membership, sending, and the
+key traffic that makes encrypted rooms usable.
 
 As the appservice, with `MATRIX_AS_TOKEN`, through the client-server API: registering and naming the
 speaker, the appservice login that gives the speaker its device, creating rooms, resolving an alias,

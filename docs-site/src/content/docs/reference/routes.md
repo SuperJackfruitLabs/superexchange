@@ -3,7 +3,9 @@ title: HTTP routes
 description: Every route SuperExchange serves, who calls it, how each is authorised, and what it answers.
 ---
 
-One dispatcher serves every route. Anything not listed is `404 {"error":"not found"}`.
+Use this table when you need to know which caller reaches which surface and what proves its
+authority. One dispatcher serves every route. Anything not listed is
+`404 {"error":"not found"}`.
 
 | Route | Who calls it | Authorised by | What it does |
 | --- | --- | --- | --- |
@@ -15,6 +17,9 @@ One dispatcher serves every route. Anything not listed is `404 {"error":"not fou
 | `GET /v1/boards`, `GET`/`PUT`/`DELETE /v1/boards/:boardId` | the operator | the operator token | Opt a board in, disable it, list them. See [Opt a board in](/operate/boards/) |
 
 ## The homeserver's routes
+
+For homeserver traffic, we follow the Application Service API v1 authentication rules before
+reading the request.
 
 The Application Service API v1. Authorisation is the spec's: `Authorization: Bearer <hs_token>`, or
 the legacy `?access_token=` query. No token is `401 M_UNAUTHORIZED`; a wrong one is
@@ -29,6 +34,8 @@ applied twice. Once authorised, the answer is always `{}`: the homeserver reads 
 it.
 
 ## The relay route
+
+For relay traffic, we verify the delivery envelope before trusting the event data.
 
 Each delivery is a CloudEvent in HTTP binary mode, signed in `x-treaty-signature` over the
 timestamp, the event id and the exact body, and checked with treaty's `verifyDelivery` before the
