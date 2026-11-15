@@ -10,6 +10,6 @@ console.log('check-frame: ok');
 
 // One mark: the favicon is the frame's own logo, byte for byte.
 const fav = readFileSync(new URL('../public/favicon.svg', import.meta.url), 'utf8');
-const brand = readFileSync(new URL('../node_modules/@superjackfruit/frontdoor/src/brand/superexchange.svg', import.meta.url), 'utf8');
+const brand = readFileSync(new URL('../node_modules/@superjackfruitlabs/vibekit-frame/src/brand/superexchange.svg', import.meta.url), 'utf8');
 if (fav !== brand) { console.error('public/favicon.svg differs from frontdoor brand/superexchange.svg: copy it again'); process.exit(1); }
 console.log('check-frame: favicon is the frame mark');
