@@ -3,7 +3,7 @@ title: Questions and approvals
 description: An agent's question and a SuperToolkit approval request in the board's room, the two ways to answer them, and the rules that keep an approval bound to what it showed.
 ---
 
-A board question is one of two things waiting on a person's answer:
+A board question is one of two things waiting on your answer:
 
 - **an agent's question**: an agent blocked until somebody answers it;
 - **an approval request**: a SuperToolkit approval waiting on a person, carrying the exact
@@ -11,6 +11,9 @@ A board question is one of two things waiting on a person's answer:
 
 Both arrive as `elicitation.pending` (CloudEvents type
 `com.superjackfruit.superpipeline.elicitation.pending.v1`).
+
+We post both in the same room, but we keep the approval path stricter because it can authorize the
+exact operation shown on the card.
 
 ## Posted once
 
@@ -23,6 +26,9 @@ argument in full, one is kept only when the board's `orgId` is the workspace of 
 token (its `org` claim). Any other is ignored, by the relay route and the sweep alike.
 
 ## Two ways to answer
+
+Use a structured answer when your client understands the card. When it does not, a typed option
+still covers the cases that are safe to interpret without guessing.
 
 The answer is carried to SuperPipeline as the person who gave it
 (`POST /v1/boards/:boardId/elicitations/:elicitationId/answer`, with Accounts' assertion, as for
@@ -59,6 +65,8 @@ reference to another message, or a board no longer opted in is ignored without a
 
 ## What the room is told
 
+When an answer needs correction, the room says what failed without pretending anything changed.
+
 - An option the question did not offer: "That is not one of this question's options. Nothing has
   changed."
 - An option that needs text, or an `https://` link, without it.
@@ -66,6 +74,9 @@ reference to another message, or a board no longer opted in is ignored without a
   decision, an approval only a workspace owner or admin may give, or the requester trying to
   decide their own request.
 - One receipt when the board takes the answer ("Answered: …").
+
+That receipt is the payoff: you can see that the board accepted the answer rather than merely that
+the room sent it.
 
 ## When the board stops waiting
 

@@ -1,14 +1,18 @@
 ---
 title: Status and limits
-description: Where SuperExchange stands. v0.0.2 in production with no production board moved yet, what works today, and the gaps other products still owe it.
+description: Where SuperExchange stands. v0.0.3 in production, carrying production boards, what works today, and the gaps other products still owe it.
 ---
 
-SuperExchange is early. **v0.0.2** is the first release in production (2026-11-12). It carries
-every card kind, but **no production board has moved to it yet**. Boards move one at a time; a
-board that has not moved is spoken for, if at all, by AgentPod's hub, as before.
+SuperExchange is early. **v0.0.3** is the current production release (2026-11-13); v0.0.2 was the
+first release in production. Production boards are opted in and carried by SuperExchange; a board
+is moved one at a time, by listing it in AgentPod's `BOARD_CHAT_MOVED_BOARDS` and then opting it in
+here. A board that has not moved is spoken for, if at all, by AgentPod's hub, as before.
 Nothing on this page is a plan; it is what the current code does and does not do.
 
 ## What works
+
+The useful path is already complete: we can make the room, carry each supported card, bring a
+person's answer back, and reconcile work that took another route.
 
 - Board rooms made once, end-to-end encrypted, with the board's people invited.
 - Gates, questions and approval requests, delivery follow-ups and waiting cards, each posted
@@ -46,6 +50,9 @@ unreadable; questions from the relay still post and answers still act.
 
 ## What is not built
 
+The rough edges are short enough to name plainly. You should plan around these rather than expect
+the room to improvise.
+
 - **Re-opting a board in for a new room.** A room keeps what it was made as. A room made in
   plaintext (on staging, before encryption) is not spoken in while plaintext rooms are off, and
   there is no way yet to give that board a new, encrypted room.
@@ -54,6 +61,9 @@ unreadable; questions from the relay still post and answers still act.
 - **Deleting the AgentPod hub's gate code.** It follows once boards have moved.
 
 ## Things to know before relying on it
+
+These are operational boundaries, not footnotes. Read them before moving a board, especially the
+link delay and the backup requirement.
 
 - **Only a person answers.** An agent, a sender linked to nobody, another message, another wait
   or another room is ignored; a gate answer from a sender linked to nobody gets the link hint.

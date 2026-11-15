@@ -5,6 +5,9 @@ description: How a release reaches production, what it checks and how it rolls b
 
 ## How a release deploys
 
+We keep the release path short and reversible: a tag selects the code, forge CI guards it, and the
+host keeps a way back before the service changes.
+
 A `vX.Y.Z` tag on `main` deploys production, through the suite's shared release workflow
 (`.github/workflows/release.yml`, its settings in `.github/release-config.json`). It runs on the
 GitHub mirror only. Only the operator pushes tags. A merge to `main` deploys staging, once the repository's
@@ -18,6 +21,9 @@ GitHub mirror only. Only the operator pushes tags. A merge to `main` deploys sta
 3. **The notes.** The release notes go up on GitHub with the tag's section of `CHANGELOG.md`.
 
 ## What release.sh does
+
+The host performs these steps in order. The snapshot comes before the build because recovery is a
+requirement, not an encore.
 
 1. Takes an **online copy of the store** (SQLite's backup API), checked with
    `PRAGMA integrity_check`, before anything changes.
@@ -71,3 +77,7 @@ backup.
 Restore the store and the crypto store from the same moment. A crypto store that is missing while
 its device is still on record cannot be used with that device, so the speaker takes a new one, and
 every room key the old one held is gone.
+
+With all three restored together, the service has its board records, the matching room keys, and
+the passphrase needed to open them. Restoring only the database is not a partial success; it leaves
+encrypted room history behind.

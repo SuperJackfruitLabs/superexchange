@@ -3,9 +3,12 @@ title: The sweeps
 description: How SuperExchange asks every enabled board what it still waits on, so a card the relay missed is posted and a card settled elsewhere is settled in chat. The interval, the backoff and what a failed read does.
 ---
 
-The relay is the fast path, not the only one. Beneath it, SuperExchange asks each enabled board,
+The relay is the fast path, not the only one. Beneath it, we ask each enabled board,
 one at a time, what it is still waiting on: once at boot, then every `SUPEREXCHANGE_SWEEP_SECONDS`
 (whole seconds from 15 to 86400; 60 when unset).
+
+Think of the sweep as reconciliation rather than a second delivery system: it fills a missed card
+and closes a card settled elsewhere, but it never invents a decision from absence.
 
 There are four sweeps, each with its own backoff:
 
@@ -46,12 +49,18 @@ before it expires. The scopes come from SuperExchange's service credential at Ac
 
 ## When a board cannot be read
 
+We leave the room unchanged when the board cannot answer. A failed read is not evidence that work
+was settled.
+
 A board that cannot be read settles nothing and closes nothing. That covers 404 for a board outside
 SuperExchange's workspace, 403 without the scope, a refused or missing token, and the board or
 Accounts being down. It is logged, and the boards after it are still asked.
 
 A pass in which **every** board failed waits twice as long before the next, up to eight times the
 interval. A pass that read any board goes back to the interval. Passes never overlap.
+
+One unreadable board therefore cannot stop the boards after it, and a broad outage slows the next
+attempt instead of piling up overlapping passes.
 
 ## Retries that ride on the same interval
 

@@ -3,7 +3,7 @@ title: Linking a Matrix id
 description: Why an answer in chat counts only from a person whose Matrix id is linked at Accounts, how a person links their own, the 15-minute hold, and what SuperExchange says to someone who has not linked.
 ---
 
-SuperExchange never decides who someone is. For every answer it asks the organization plane
+SuperExchange never decides who you are. For every answer it asks the organization plane
 (Accounts) which principal the sender's Matrix id is linked to
 (`GET /api/identities/matrix/:mxid`), and what kind of principal that is. Only a linked person's
 answer can act at SuperPipeline, and it acts as that person.
@@ -18,17 +18,20 @@ presented together:
    not recent);
 2. an OpenID token from their homeserver, which Accounts verifies with that homeserver.
 
-In SuperMessage this is **Settings → Account → Link to your Super Jackfruit account**. The app
-gets the OpenID token from the homeserver and opens Accounts' `/link/matrix` page with it; the
-person signs in if they need to and confirms. Any Matrix client that can open that page the same
+In SuperMessage on Apple, open the **Account** panel and choose **Link to your Super Jackfruit
+account**. The app gets the OpenID token from the homeserver and opens Accounts' `/link/matrix`
+page with it; sign in if needed, then confirm. Any Matrix client that can open that page the same
 way can link.
+
+Accounts now has both proofs and records the link. The 15-minute safety hold below starts at that
+moment.
 
 Accounts' rules, which SuperExchange relies on:
 
 - **Configured homeservers only.** Accounts lists the homeservers whose users may link
   (`MATRIX_HOMESERVERS`). Unset, self-linking is off.
 - **One person per Matrix id.** An id linked to somebody else is refused until its owner unlinks
-  it, or an Accounts operator moves it.
+  it, or an Accounts operator unlinks it so the other person can link it themselves.
 - **Single use.** Each OpenID token links once.
 - **The person can see and remove the link** in their Accounts security settings.
 
@@ -37,6 +40,9 @@ Accounts' rules, which SuperExchange relies on:
 A self-made link acts **15 minutes after it was made**. Until then Accounts answers that the
 identity is pending, and SuperExchange reads that as "linked to nobody". An answer sent in those 15
 minutes does not count; answer again once the hold is over.
+
+After the hold, send the answer again. SuperExchange can resolve your Matrix id to your person and
+carry the answer to SuperPipeline as you.
 
 ## What SuperExchange says to someone not linked
 

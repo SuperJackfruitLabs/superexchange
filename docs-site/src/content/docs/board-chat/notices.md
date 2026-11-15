@@ -5,6 +5,9 @@ description: What the board says about work already in its room (reminders, esca
 
 ## Board-room notices
 
+The card starts the conversation; notices keep it honest. We attach each update to the card it
+belongs to, so a reminder or failure does not drift into the room without context.
+
 What the board says about work already in a room arrives from the relay as seven CloudEvents types,
 each `com.superjackfruit.superpipeline.<event>.v1`. Each is checked with treaty's predicate and its
 `event`, kept for opted-in, enabled boards, recorded once, and said once as a reply to the card it
@@ -29,6 +32,9 @@ sent again at boot, when a person joins, and every `SUPEREXCHANGE_SWEEP_SECONDS`
 
 ## Escalations
 
+When work needs a wider audience, SuperExchange invites the people Accounts can prove are owners or
+admins. It never guesses a Matrix id from a name or email.
+
 An escalation invites the workspace's **owners and admins who have a linked Matrix id** into the
 room, each once per board. One who leaves is not invited back; an invite the homeserver refuses is
 tried again at the next escalation. Accounts lists SuperExchange's own workspace
@@ -49,6 +55,9 @@ to the new copy. A board that cannot be read gets the notice alone.
 
 ## Pull-backs and overrides from chat
 
+You can also send two corrective actions back from the room. Both require a comment because the
+board is recording a change to an approval or a check, not a casual reaction.
+
 Two things a person can send from the room:
 
 | Sent in chat | References | Carried to SuperPipeline as |
@@ -62,3 +71,6 @@ comment saying why. Nothing has changed."). The board's refusal is said in the r
 
 Success says nothing by itself: the board's `decision.pulled_back` or `check.overridden` notice
 does.
+
+That notice is the confirmation to watch for: it proves the board accepted the action and gives
+every client the same recorded result.

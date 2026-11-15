@@ -3,11 +3,14 @@ title: Run it
 description: What SuperExchange needs from SuperPipeline, the event relay, Accounts and the homeserver, the appservice registration, and how to start it.
 ---
 
-SuperExchange is one Bun service (Bun 1.2.8, the version in `.bun-version`) with a SQLite store.
-It needs four things around it, and refuses to start until every [setting](/operate/settings/) it
-needs is present and well formed.
+We will give one Bun service (Bun 1.2.8, the version in `.bun-version`) the four systems it needs,
+start it, and prove it is listening. Its own state lives in SQLite, and it refuses to start until
+every required [setting](/operate/settings/) is present and well formed.
 
 ## What it needs
+
+Let's work outward from the service. When these four connections are ready, startup has no hidden
+fifth dependency waiting behind the curtain.
 
 ### A Matrix homeserver
 
@@ -82,9 +85,13 @@ org.matrix.msc3202: true
 io.element.msc4190: false
 ```
 
+Once the homeserver has this registration, it can deliver transactions to SuperExchange and the
+speaker can log in for the device that holds its encryption keys.
+
 ## Start it
 
-From the repository root:
+From the repository root, install the workspace and start SuperExchange with the required
+connections and secrets:
 
 ```sh
 bun install
@@ -98,11 +105,20 @@ ORG_PLANE_URL=https://accounts.example ORG_PLANE_SERVICE_CREDENTIAL=svc_…:… 
 SUPEREXCHANGE_CRYPTO_PASSPHRASE=$(openssl rand -base64 32) \
 SUPERPIPELINE_URL=https://pipeline.example \
 bun apps/exchange/src/main.ts
+```
+
+Leave that process running. In a second terminal, ask the health endpoint whether startup made it
+all the way through:
+
+```sh
 curl http://127.0.0.1:8080/healthz
 ```
 
 `/healthz` answers `{"ok":true,"service":"superexchange"}`. Keep the crypto passphrase: the crypto
 store cannot be opened without it.
+
+You now have a live service and a health response. The next action is deliberately separate:
+[opt a board in](/operate/boards/), because startup carries nothing by surprise.
 
 ### What happens at boot
 
@@ -121,4 +137,4 @@ on `/healthz`.
 
 ## Then
 
-[Opt a board in](/operate/boards/). Nothing is carried for a board until an operator does.
+[Opt a board in](/operate/boards/). Nothing is carried for a board until you make that choice.
