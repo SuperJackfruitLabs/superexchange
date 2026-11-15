@@ -17,7 +17,7 @@ forge CI builds it in its own job only when the site changed.
 
 ## What is deliberate about it
 
-**It wears the suite's docs theme**, `@superjackfruit/docs-theme` (vendored under `vendor/` with
+**It wears the suite's docs theme**, `@superjackfruitlabs/vibekit-docs` (vendored under `vendor/` with
 the frontdoor and vibekit tarballs it needs, as the landing page vendors its own). The whole design
 config is `sjlDocs({ product: 'superexchange', status: 'wet paint' })` in `astro.config.mjs`:
 vibekit's azure, the suite's faces (self-hosted), the street, status badges, Copy Markdown, the
