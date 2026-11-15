@@ -1,12 +1,12 @@
 ---
 title: Status and limits
-description: Where SuperExchange stands. v0.0.3 in production with no production board moved yet, what works today, and the gaps other products still owe it.
+description: Where SuperExchange stands. v0.0.3 in production, carrying production boards, what works today, and the gaps other products still owe it.
 ---
 
 SuperExchange is early. **v0.0.3** is the current production release (2026-11-13); v0.0.2 was the
-first release in production. It carries every card kind, but **no production board has moved to it
-yet**. Boards move one at a time; a
-board that has not moved is spoken for, if at all, by AgentPod's hub, as before.
+first release in production. Production boards are opted in and carried by SuperExchange; a board
+is moved one at a time, by listing it in AgentPod's `BOARD_CHAT_MOVED_BOARDS` and then opting it in
+here. A board that has not moved is spoken for, if at all, by AgentPod's hub, as before.
 Nothing on this page is a plan; it is what the current code does and does not do.
 
 ## What works

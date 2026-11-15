@@ -58,7 +58,7 @@ With its own service token, on SuperPipeline's service routes.
 
 ## The homeserver (`MATRIX_HOMESERVER_URL`)
 
-The homeserver calls above carry the Matrix mechanics: room creation, membership, sending, and the
+These homeserver calls carry the Matrix mechanics: room creation, membership, sending, and the
 key traffic that makes encrypted rooms usable.
 
 As the appservice, with `MATRIX_AS_TOKEN`, through the client-server API: registering and naming the

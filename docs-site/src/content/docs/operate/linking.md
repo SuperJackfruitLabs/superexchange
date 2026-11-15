@@ -31,7 +31,7 @@ Accounts' rules, which SuperExchange relies on:
 - **Configured homeservers only.** Accounts lists the homeservers whose users may link
   (`MATRIX_HOMESERVERS`). Unset, self-linking is off.
 - **One person per Matrix id.** An id linked to somebody else is refused until its owner unlinks
-  it, or an Accounts operator moves it.
+  it, or an Accounts operator unlinks it so the other person can link it themselves.
 - **Single use.** Each OpenID token links once.
 - **The person can see and remove the link** in their Accounts security settings.
 
