@@ -1,7 +1,7 @@
 # SuperExchange landing page
 
 The public page at `superexchange.dev`. Astro, one page and a 404, inside the suite frame
-(`@superjackfruit/frontdoor`), with one small inline script for "How it works".
+(`@superjackfruitlabs/vibekit-frame`), with one small inline script for "How it works".
 
 ```sh
 npm install
@@ -57,7 +57,7 @@ header.
 `og.png` all show the suite frame's SuperExchange logo. `src/components/Mark.astro` reads it from
 the frontdoor package at build time; `public/favicon.svg` is a byte-for-byte copy, and the build
 (`scripts/check-frame.mjs`) fails when the two differ. After a frontdoor upgrade that changes the
-logo, copy `node_modules/@superjackfruit/frontdoor/src/brand/superexchange.svg` to
+logo, copy `node_modules/@superjackfruitlabs/vibekit-frame/src/brand/superexchange.svg` to
 `public/favicon.svg`.
 
 **The link preview** (`public/og.png`, 1200×630) comes from the suite frame's shared template:
