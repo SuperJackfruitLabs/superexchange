@@ -5,6 +5,8 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+## v0.0.4 — 2026-11-16
+
 - Gate messages in board rooms now list the opening run's linked artifacts, preserving pinned
   SuperLibrary version links; gates with no linked artifact say so explicitly.
 
