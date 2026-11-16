@@ -5,6 +5,9 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+- Gate messages in board rooms now list the opening run's linked artifacts, preserving pinned
+  SuperLibrary version links; gates with no linked artifact say so explicitly.
+
 ## v0.0.3 — 2026-11-13
 
 - A waiting card raised an hour or more before it is posted says when it was raised and how long
