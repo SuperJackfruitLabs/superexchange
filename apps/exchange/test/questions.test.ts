@@ -216,17 +216,21 @@ function fakePlane() {
   const state = { down: false };
   const assertions: unknown[] = [];
   const identities: Record<string, string> = {
-    [ANA]: "prn_ana",
-    [AGENT]: "prn_cody",
+    [ANA]: "prn_a11ce000000000000005",
+    [AGENT]: "prn_a11ce000000000000004",
   };
   const principals: Record<string, Record<string, unknown>> = {
-    prn_ana: {
-      id: "prn_ana",
+    prn_a11ce000000000000005: {
+      id: "prn_a11ce000000000000005",
       kind: "human",
       handle: "ana",
       displayName: "Ana",
     },
-    prn_cody: { id: "prn_cody", kind: "agent", handle: "cody" },
+    prn_a11ce000000000000004: {
+      id: "prn_a11ce000000000000004",
+      kind: "agent",
+      handle: "cody",
+    },
   };
   const fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     if (state.down) throw new TypeError(`connect ECONNREFUSED ${PLANE_URL}`);
@@ -570,7 +574,7 @@ describe("the relay's elicitation.pending", () => {
 describe("the approval-request rule", () => {
   test("is this service's token's workspace being the board's", async () => {
     const { log, lines } = captureLog();
-    const token = jwt({ org: "org_1", sub: "prn_svc" });
+    const token = jwt({ org: "org_1", sub: "prn_a11ce00000000000000b" });
     const allowed = createApprovalScope({
       tokens: { get: async () => token },
       log,
@@ -773,7 +777,9 @@ describe("question.answer.v2", () => {
     const [a] = s.board.answers;
     expect(a?.path).toBe(`/v1/boards/${BOARD}/elicitations/elc_1/answer`);
     expect(a?.body).toEqual({ option: "run_them" });
-    expect(a?.authorization).toBe(`Bearer ${jwt({ sub: "prn_ana" })}`);
+    expect(a?.authorization).toBe(
+      `Bearer ${jwt({ sub: "prn_a11ce000000000000005" })}`,
+    );
     expect(s.plane.assertions).toEqual([
       { identity: { system: "matrix", externalId: ANA }, audience: SP_URL },
     ]);
@@ -860,7 +866,8 @@ describe("question.answer.v2", () => {
   test("an unlinked sender and this service's own namespace are refused silently", async () => {
     const s = setup();
     // Linked, even: a sender in this namespace is this service, never a person answering.
-    s.plane.identities[`@superexchange_x:${SERVER}`] = "prn_ana";
+    s.plane.identities[`@superexchange_x:${SERVER}`] =
+      "prn_a11ce000000000000005";
     const ev = await s.ask(questionBody());
     await s.deliver(
       v2Answer(ev, {}, { sender: STRANGER }),
@@ -1364,7 +1371,7 @@ describe("SuperPipeline's question routes", () => {
         boardId: BOARD,
         elicitationId: "elc_1",
         option: "skip",
-        principalId: "prn_ana",
+        principalId: "prn_a11ce000000000000005",
         senderMxid: ANA,
       },
       {
@@ -1529,7 +1536,7 @@ test("no secret, token or URL reaches a log on any path", async () => {
   for (const secret of [
     CREDENTIAL.secret,
     CREDENTIAL.id,
-    jwt({ sub: "prn_ana" }),
+    jwt({ sub: "prn_a11ce000000000000005" }),
     PLANE_URL,
     SP_URL,
     AS_TOKEN,

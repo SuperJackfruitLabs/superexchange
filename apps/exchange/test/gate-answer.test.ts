@@ -44,7 +44,7 @@ const CREDENTIAL = {
   id: `svc_${"0a".repeat(10)}`,
   secret: "plane-secret-for-tests",
 };
-const ANA_PRN = "prn_ana";
+const ANA_PRN = "prn_a11ce000000000000005";
 
 /** A JWT-shaped token whose payload names `sub`; SuperPipeline verifies it, this service only reads it. */
 function token(sub: string): string {
@@ -120,7 +120,7 @@ function fakePlane() {
   };
   const identities: Record<string, string> = {
     [ANA]: ANA_PRN,
-    [AGENT]: "prn_cody",
+    [AGENT]: "prn_a11ce000000000000004",
   };
   const principals: Record<string, Record<string, unknown>> = {
     [ANA_PRN]: {
@@ -129,8 +129,8 @@ function fakePlane() {
       handle: "ana",
       displayName: "Ana",
     },
-    prn_cody: {
-      id: "prn_cody",
+    prn_a11ce000000000000004: {
+      id: "prn_a11ce000000000000004",
       kind: "agent",
       handle: "cody",
       displayName: null,
@@ -579,7 +579,7 @@ describe("who may answer", () => {
   test("an assertion for somebody else is refused, and the gate stays answerable", async () => {
     const s = setup();
     s.posted();
-    s.plane.state.asserts = "prn_somebody_else";
+    s.plane.state.asserts = "prn_a11ce000000000000001";
     await s.deliver(answer());
     expect(s.board.resolves).toEqual([]);
     expect(s.replies()).toEqual([
@@ -972,7 +972,7 @@ describe("no secret reaches a log or the room", () => {
     s.plane.state.down = true;
     await s.deliver(answer());
     s.plane.state.down = false;
-    s.plane.state.asserts = "prn_x";
+    s.plane.state.asserts = "prn_a11ce00000000000000c";
     await s.deliver(answer());
     s.plane.state.asserts = ANA_PRN;
     s.board.state.next = "unreachable";
@@ -987,7 +987,7 @@ describe("no secret reaches a log or the room", () => {
       CREDENTIAL.secret,
       CREDENTIAL.id,
       token(ANA_PRN),
-      token("prn_x"),
+      token("prn_a11ce00000000000000c"),
       PLANE_URL,
       SP_URL,
       AS_TOKEN,

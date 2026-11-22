@@ -14,6 +14,7 @@ import {
 } from "../src/board-chat/index.ts";
 import {
   accepts,
+  bundle,
   checkedFetch,
   contracted,
   errorCodes,
@@ -21,6 +22,7 @@ import {
   flatErrorCases,
   matchOperation,
   plane,
+  PLANE,
   planeCases,
   urlOf,
   type PartCases,
@@ -280,6 +282,38 @@ describe("plane.v1: the plane's refusals, in its flat envelope", () => {
         status: answer.status,
         code: codeOf(answer.body),
       });
+    }
+  });
+
+  test("only an id in treaty's principal grammar is asked about", async () => {
+    const pattern: unknown = Reflect.get(
+      Reflect.get(
+        Reflect.get(
+          Reflect.get(Object(bundle.files.get(PLANE)), "components"),
+          "schemas",
+        ),
+        "PrincipalId",
+      ),
+      "pattern",
+    );
+    expect(pattern).toBeString();
+    const grammar = new RegExp(String(pattern));
+    expect(grammar.test(TOKEN_SUB)).toBe(true);
+    for (const loose of [
+      "prn_ana",
+      `prn_${"A".repeat(20)}`,
+      `prn_${"0".repeat(21)}`,
+      `prn_${"0".repeat(19)}-`,
+    ]) {
+      expect(grammar.test(loose)).toBe(false);
+      const { client, reached } = accounts({
+        readPrincipal: ok(
+          "readPrincipal",
+          Object.keys(cases("readPrincipal", "200").valid)[0] ?? "",
+        ),
+      });
+      expect(await client.principalLabel(loose)).toBeNull();
+      expect(reached).toEqual([]);
     }
   });
 

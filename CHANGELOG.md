@@ -9,6 +9,8 @@ and puts the release before it back when the checks fail.
   quorum, release or pull-back notice for a gate or question that has arrived but is not yet
   posted is answered 503, so the relay sends it again instead of losing it; a delivery the
   service could not handle just now (its store failed) is 503 too, rather than an unhandled 500.
+- A principal id is asked about only when it is in treaty's grammar (`prn_` and 20 hex digits);
+  a looser id names nobody and reaches neither the organization plane nor an invite.
 - Treaty 0.0.17.
 
 ## v0.0.4 — 2026-11-16

@@ -652,7 +652,7 @@ describe("delivery.answer.v2", () => {
     expect(s.board.calls).toEqual([
       {
         path: `/v1/boards/${BOARD}/gates/gate_8f3a/delivery`,
-        authorization: `Bearer ${jwt({ sub: "prn_ana" })}`,
+        authorization: `Bearer ${jwt({ sub: "prn_a11ce000000000000005" })}`,
         body: { liveUrl: "https://social.example/posts/1" },
       },
     ]);
@@ -757,7 +757,7 @@ describe("delivery.answer.v2", () => {
     const s = setup();
     const ev = await s.owe();
     const own = `@superexchange_x:${SERVER}`;
-    s.plane.identities[own] = "prn_ana";
+    s.plane.identities[own] = "prn_a11ce000000000000005";
     expect(
       await s.followups.handle(deliveryAnswer(ev, {}, { sender: own })),
     ).toEqual({ status: "ignored", reason: "own-namespace" });
@@ -1008,7 +1008,7 @@ describe("attention.answer.v2", () => {
     expect(s.board.calls).toEqual([
       {
         path: `/v1/boards/${BOARD}/cards/crd_6b40/resume`,
-        authorization: `Bearer ${jwt({ sub: "prn_ana" })}`,
+        authorization: `Bearer ${jwt({ sub: "prn_a11ce000000000000005" })}`,
         body: {
           comment: "The database is back; run the migrations again.",
           expectedWaitId: "wait_0123456789abcdef",
@@ -1470,7 +1470,7 @@ describe("SuperPipeline's follow-up and waiting-card routes", () => {
       },
       fetch: board.fetch,
     };
-    const who = { principalId: "prn_ana", senderMxid: ANA };
+    const who = { principalId: "prn_a11ce000000000000005", senderMxid: ANA };
     expect(
       await answerFollowupAtSuperpipeline(
         {
@@ -1621,7 +1621,7 @@ test("no secret, token or URL reaches a log on any path", async () => {
   for (const secret of [
     CREDENTIAL.secret,
     CREDENTIAL.id,
-    jwt({ sub: "prn_ana" }),
+    jwt({ sub: "prn_a11ce000000000000005" }),
     PLANE_URL,
     SP_URL,
     AS_TOKEN,
