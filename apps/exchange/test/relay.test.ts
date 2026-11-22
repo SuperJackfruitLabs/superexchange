@@ -202,4 +202,25 @@ describe("relay deliveries", () => {
     const raw = UTF8.encode("x".repeat(MAX_RELAY_BODY + 1));
     expect((await handle(await delivery(null, { raw }))).status).toBe(413);
   });
+
+  test("a delivery this service could not handle just now is 503, so the relay sends it again", async () => {
+    const t = tempStore();
+    cleanups.push(t.cleanup);
+    const { log, lines } = captureLog();
+    const handle = createRelayHandler({
+      secret: RELAY_SECRET,
+      store: {
+        ...t.store,
+        getBoard: () => {
+          throw new Error("database is locked at /var/lib/secret-path");
+        },
+      },
+      log,
+    });
+    const response = await handle(await delivery(gateBody()));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "try again" });
+    expect(lines.join("\n")).toContain("answered 503");
+    expect(lines.join("\n")).not.toContain("secret-path");
+  });
 });

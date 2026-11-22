@@ -26,6 +26,9 @@
  *   invited. A reminder, an escalation or progress on a card already settled says nothing
  *   either, since a reply to a decided card would read as though it were still open; a release
  *   or a pull-back follows a held approval's receipt, so it is said on a settled gate.
+ * - **A card on its way is waited for.** A notice for a gate or a question delivered here, on
+ *   this board and card, not settled and not yet posted, is `later`: the relay is answered 503
+ *   and sends it again, rather than losing a reply to a card that is about to be up.
  * - **Checks have no card of their own.** A reminder of overdue checks stands alone, and their
  *   escalation posts one (`notice-post.ts`). A failed or overridden check is said in the board's
  *   room whether or not one was posted, as a reply when one is open.
@@ -274,6 +277,49 @@ export function decisionCard(
   return null;
 }
 
+/**
+ * True when the notice replies to a gate or a question delivered here for its board and card, not
+ * settled and not yet posted: its card is on its way, so the notice is worth trying again.
+ */
+export function cardOnItsWay(
+  store: CardStore,
+  n: Pick<NoticeInput, "notice" | "boardId" | "cardId" | "body">,
+): boolean {
+  const field = (key: string): string =>
+    typeof n.body === "object" && n.body !== null && key in n.body
+      ? String(Reflect.get(n.body, key))
+      : "";
+  let kind: string;
+  let id: string;
+  if (n.notice === "reminded" || n.notice === "escalated") {
+    kind = field("decisionKind");
+    id = field("decisionId");
+  } else if (
+    n.notice === "approval_recorded" ||
+    n.notice === "released" ||
+    n.notice === "pulled_back"
+  ) {
+    kind = "gate";
+    id = field("gateId");
+  } else {
+    return false;
+  }
+  const delivery =
+    kind === "gate"
+      ? store.gateDelivery(id)
+      : kind === "question"
+        ? store.questionDelivery(id)
+        : null;
+  if (delivery === null || delivery.settledAt !== null) return false;
+  if (delivery.boardId !== n.boardId || cardIdOf(delivery.body) !== n.cardId)
+    return false;
+  const posted =
+    kind === "gate"
+      ? store.gateEvent(id)?.postedAt
+      : store.questionEvent(id)?.postedAt;
+  return !posted;
+}
+
 /** Why a notice has nothing true to say. */
 export type Unsayable =
   | "card not posted here"
@@ -341,6 +387,8 @@ export type NoticeIntake =
       status: "ignored";
       reason: "board not opted in" | "board disabled" | Unsayable;
     }
+  /** Its card is on its way (`cardOnItsWay`): nothing recorded, worth delivering again. */
+  | { status: "later"; reason: "card not posted yet" }
   | { status: "invalid" };
 
 /**
@@ -371,6 +419,8 @@ export function intakeNotice(
   });
   // Already recorded: a redelivery, whatever has happened to its card since.
   if (store.notice(input.noticeId) !== null) return accepted(true);
+  if (cardOnItsWay(store, input))
+    return { status: "later", reason: "card not posted yet" };
   const why = unsayable(store, input);
   if (why !== null) return { status: "ignored", reason: why };
   return accepted(!store.recordNotice(input));

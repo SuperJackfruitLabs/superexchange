@@ -673,6 +673,53 @@ describe("the relay's board-room notices", () => {
     expect(r.accepted).toEqual([]);
   });
 
+  test("a notice for a gate delivered here but not yet posted is 503, so the relay sends it again", async () => {
+    const s = setup();
+    const r = relay(s);
+    intakeGate(s.store, gateBody({ quorum: QUORUM }));
+    for (const [body, type] of [
+      [timeout(), DECISION_REMINDED_V1],
+      [approval(), GATE_APPROVAL_RECORDED_V1],
+      [released(), DECISION_RELEASED_V1],
+    ] as const) {
+      const res = await r.handle(await relayRequest(body, type));
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: "card not posted yet" });
+    }
+    expect(s.store.unpostedNotices()).toEqual([]);
+    expect(r.accepted).toEqual([]);
+
+    // Once its card is up, the redelivery is taken.
+    expect((await s.chat.post("gte_1")).status).toBe("posted");
+    const res = await r.handle(
+      await relayRequest(timeout(), DECISION_REMINDED_V1),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "accepted" });
+
+    // A delivered gate the board settled before it was posted never will be: ignored.
+    intakeGate(s.store, gateBody({ gateId: "gte_2" }));
+    s.store.settleGateDelivery("gte_2");
+    const settled = await r.handle(
+      await relayRequest(
+        timeout({ decisionId: "gte_2" }),
+        DECISION_REMINDED_V1,
+      ),
+    );
+    expect(settled.status).toBe(200);
+    expect(await settled.json()).toEqual({ status: "ignored" });
+
+    // A question on its way is waited for the same way.
+    await intakeQuestion(s.store, questionBody());
+    const question = await r.handle(
+      await relayRequest(
+        timeout({ decisionKind: "question", decisionId: "elc_1" }),
+        DECISION_REMINDED_V1,
+      ),
+    );
+    expect(question.status).toBe(503);
+  });
+
   test("a release or a pull-back on a settled gate is said: it follows the held approval's receipt", async () => {
     const s = setup();
     await s.gate();
