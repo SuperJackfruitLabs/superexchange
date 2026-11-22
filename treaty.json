@@ -2,8 +2,11 @@
   "$schema": "https://raw.githubusercontent.com/SuperJackfruitLabs/treaty/main/schemas/treaty/product-manifest.v1.json",
   "product": "superexchange",
   "treaty": "0.0.16",
-  "produces": ["superexchange.board-room"],
+  "produces": [
+    "superexchange.board-room"
+  ],
   "consumes": [
+    "accounts.identity-corpus",
     "accounts.plane-api",
     "accounts.token-claims",
     "superpipeline.decisions",
