@@ -41,7 +41,7 @@ import {
 } from "../src/board-chat/index.ts";
 import { createRelayHandler } from "../src/routes/relay.ts";
 import type { QuestionOffer } from "../src/store/index.ts";
-import { checkedFetch, decisions } from "./contracts.ts";
+import { checkedFetch, decisions, plane as planeApi } from "./contracts.ts";
 import { RELAY_SECRET, captureLog, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -257,7 +257,12 @@ function fakePlane() {
     }
     return Response.json({ error: "not_found" }, { status: 404 });
   }) as typeof globalThis.fetch;
-  return { fetch, state, assertions, identities };
+  return {
+    fetch: checkedFetch(planeApi, fetch),
+    state,
+    assertions,
+    identities,
+  };
 }
 
 /** SuperPipeline's answer route; answers what `next` says. */

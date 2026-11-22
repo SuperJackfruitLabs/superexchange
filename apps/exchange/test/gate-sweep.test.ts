@@ -26,7 +26,7 @@ import {
   sweepGates,
   type ResolveResult,
 } from "../src/board-chat/index.ts";
-import { checkedFetch, decisions } from "./contracts.ts";
+import { checkedFetch, decisions, plane as planeApi } from "./contracts.ts";
 import { captureLog, gateBody, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -122,7 +122,7 @@ function fakePlane() {
     return Response.json({ error: "not_found" }, { status: 404 });
   }) as typeof globalThis.fetch;
   return {
-    fetch,
+    fetch: checkedFetch(planeApi, fetch),
     calls,
     state,
     tokens: () => calls.filter((c) => c.path === "/api/token/service"),

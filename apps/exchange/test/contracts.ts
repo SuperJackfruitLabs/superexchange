@@ -102,6 +102,23 @@ export function errorStatuses(api: Api, operationId: string): number[] {
     .map(Number);
 }
 
+/** The error codes an operation lists (`x-treaty-error-codes`). */
+export function errorCodes(api: Api, operationId: string): string[] {
+  const op = api.operations.find((o) => o.id === operationId);
+  if (!op) throw new Error(`${api.path} has no operation ${operationId}`);
+  return op.errorCodes;
+}
+
+/** Whether the contract has `body` as an answer of `operationId` with `status`. */
+export function accepts(
+  api: Api,
+  operationId: string,
+  status: number,
+  body: unknown,
+): boolean {
+  return validateResponse(bundle, api, operationId, status, body).valid;
+}
+
 /** A response body as the contract would have it; throws when it is not one. */
 export function contracted(
   api: Api,
