@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@matrix-org/matrix-sdk-crypto-nodejs": "0.6.6",
-    "@superjackfruitlabs/treaty-cloudevents": "0.0.6",
+    "@superjackfruitlabs/treaty-cloudevents": "0.0.14",
     "@superjackfruitlabs/treaty-matrix-events": "0.0.14"
   }
 }

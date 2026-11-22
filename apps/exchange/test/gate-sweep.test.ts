@@ -26,6 +26,7 @@ import {
   sweepGates,
   type ResolveResult,
 } from "../src/board-chat/index.ts";
+import { checkedFetch, decisions } from "./contracts.ts";
 import { captureLog, gateBody, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -163,7 +164,7 @@ function fakeSuperpipeline() {
     return Response.json({ error: "not found" }, { status: 404 });
   }) as typeof globalThis.fetch;
   return {
-    fetch,
+    fetch: checkedFetch(decisions, fetch),
     reads,
     pending,
     gates,

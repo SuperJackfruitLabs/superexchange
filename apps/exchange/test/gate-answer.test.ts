@@ -20,6 +20,7 @@ import {
   resolveGateAtSuperpipeline,
 } from "../src/board-chat/index.ts";
 import type { GateOffer } from "../src/store/index.ts";
+import { checkedFetch, decisions } from "./contracts.ts";
 import { captureLog, gateBody, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -210,7 +211,7 @@ function fakeBoard() {
       { status: next.status },
     );
   }) as typeof globalThis.fetch;
-  return { fetch, resolves, state };
+  return { fetch: checkedFetch(decisions, fetch), resolves, state };
 }
 
 /** The default gate: a v1 gate with approve, request changes and reject, posted into ROOM. */
