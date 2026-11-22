@@ -22,15 +22,14 @@
  * board's pending gates, each a `gate.pending` body) and `GET /v1/boards/:boardId/gates/:gateId`
  * (one gate, and how it was decided); and, on `approval-requests:relay`,
  * `GET /v1/boards/:boardId/elicitations/pending` (the board's pending questions, broker approval
- * requests included, each an `elicitation.pending` body). `GET /v1/boards/:boardId/deliveries/pending`
- * (`delivery.pending` bodies) and `GET /v1/boards/:boardId/attention/pending` (`attention.pending`
- * bodies) are read the same way; SuperPipeline does not yet admit a service token on either (they
- * are agent-or-person routes there), so until it does they are refused and the sweeps that read
- * them settle nothing. `GET /v1/boards/:boardId/cards/:cardId/checks` (a card's checks, which an
- * escalation of overdue checks lists) is read the same way, and is not admitted for a service token
- * there yet either. Only reads: deciding stays with the person. A refusal
- * throws `SuperpipelineError`, because "nothing pending" and "this token is refused" must never
- * read alike; a 401 also drops the held token, so the next read asks the plane for a new one.
+ * requests included, each an `elicitation.pending` body). On the same `gates:read`, also
+ * `GET /v1/boards/:boardId/deliveries/pending` (`delivery.pending` bodies),
+ * `GET /v1/boards/:boardId/attention/pending` (`attention.pending` bodies) and
+ * `GET /v1/boards/:boardId/cards/:cardId/checks` (a card's checks, which an escalation of overdue
+ * checks lists). Treaty's `decisions.v1` contract holds every one of these routes. Only reads:
+ * deciding stays with the person. A refusal (an `error.v1` body) throws `SuperpipelineError`,
+ * because "nothing pending" and "this token is refused" must never read alike; a 401 also drops
+ * the held token, so the next read asks the plane for a new one.
  */
 import { assertionFailureCode, type ServiceTokens } from "./accounts.ts";
 
@@ -324,7 +323,10 @@ export class SuperpipelineError extends Error {
 
 /** One gate as its board reads it now, kept to what a receipt needs. */
 export interface BoardGate {
-  /** `pending` or `resolved`; anything else is a shape this service does not model. */
+  /**
+   * `pending`, `resolved` or `cancelled` (a card moved or archived with its review pending). Only
+   * `resolved` with a decision settles a card here; anything else is left alone.
+   */
   status: string;
   decision: string | null;
   /** Who decided: a principal id, never said in a room; null when the board does not say. */
