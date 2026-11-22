@@ -33,7 +33,9 @@ its scope are `decisions/2026-11-10-superexchange-owns-the-communication-server.
 ## Checks
 
 `bun run check` runs what CI runs: format, typecheck, lint (the type-aware ratchet in
-`scripts/lint.mjs`), tests. Run it before pushing, after `bun install --frozen-lockfile`.
+`scripts/lint.mjs`), tests. Run it before pushing, after `bun install --frozen-lockfile`. CI also
+runs `node_modules/.bin/treaty verify`, which checks `treaty.json` (what this service produces and
+consumes, and the treaty release it pins) against the installed release.
 
 A change to what the store does changes `apps/exchange/test/fixtures/store-trace.json`;
 regenerate it with `STORE_TRACE_WRITE=1` only when that change is the point, and say why.

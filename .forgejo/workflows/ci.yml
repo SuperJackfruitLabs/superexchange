@@ -53,6 +53,11 @@ jobs:
           bun-version-file: .bun-version
       - if: env.APP == 'true'
         run: bun install --frozen-lockfile
+      - name: Treaty
+        # treaty.json against the installed treaty release: what this service produces and
+        # consumes, and the release it pins.
+        if: env.APP == 'true'
+        run: node_modules/.bin/treaty verify
       - name: Format
         if: env.APP == 'true'
         run: bun run fmt:check
