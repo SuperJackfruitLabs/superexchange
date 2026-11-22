@@ -5,6 +5,7 @@
     "": {
       "name": "superexchange",
       "devDependencies": {
+        "@superjackfruitlabs/treaty-contracts": "0.0.15",
         "@types/bun": "1.2.8",
         "oxlint": "1.88.0",
         "oxlint-tsgolint": "7.0.2004",
@@ -17,7 +18,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@matrix-org/matrix-sdk-crypto-nodejs": "0.6.6",
-        "@superjackfruitlabs/treaty-cloudevents": "0.0.6",
+        "@superjackfruitlabs/treaty-cloudevents": "0.0.14",
         "@superjackfruitlabs/treaty-matrix-events": "0.0.14",
       },
     },
@@ -26,6 +27,8 @@
     "@matrix-org/matrix-sdk-crypto-nodejs",
   ],
   "packages": {
+    "@cfworker/json-schema": ["@cfworker/json-schema@4.1.1", "", {}, "sha512-gAmrUZSGtKc3AiBL71iNWxDsyUC5uMaKKGdvzYsBoTW/xi42JQHl7eKV2OYzCUqvc+D2RCcf7EXY2iCyFIk6og=="],
+
     "@matrix-org/matrix-sdk-crypto-nodejs": ["@matrix-org/matrix-sdk-crypto-nodejs@0.6.6", "", { "dependencies": { "https-proxy-agent": "^7.0.5", "node-downloader-helper": "^2.1.9" } }, "sha512-JlYSjq9Sm/0QoUXfk6C7JppsOG0ESY8BHEIaQgjQ8iQ0GkhvJrhPZbMJmd77/Bgeahd1GENf8896nauf4ximzQ=="],
 
     "@oxlint-tsgolint/darwin-arm64": ["@oxlint-tsgolint/darwin-arm64@7.0.2004", "", { "os": "darwin", "cpu": "arm64" }, "sha512-uJk3ttju7Lz+Nv8WG4CsLyewoL1qf/Ny8S8OksJ7Bm/F14Tc9gMfW6arM1PCc57IzH/X/I79YsCWTgxX1FKibQ=="],
@@ -80,7 +83,9 @@
 
     "@superjackfruitlabs/superexchange": ["@superjackfruitlabs/superexchange@workspace:apps/exchange"],
 
-    "@superjackfruitlabs/treaty-cloudevents": ["@superjackfruitlabs/treaty-cloudevents@0.0.6", "", {}, "sha512-+I0C/1M2Y1qoCTm7Pw0ovlJNamdVt8QDtM6KWurN0n46bO1JeQE1OxLxEVugIZ2ZxSbEZfY//1uAzjDsqZ7PgQ=="],
+    "@superjackfruitlabs/treaty-cloudevents": ["@superjackfruitlabs/treaty-cloudevents@0.0.14", "", {}, "sha512-2Ue/9/ZG/XYViY+VZP4vZp1FPSr3J9qfR8lCf0Z5o4P9gW2BKQ8Xtx1bIzTns7einG1LARkSmAdXBaNqcxxTyg=="],
+
+    "@superjackfruitlabs/treaty-contracts": ["@superjackfruitlabs/treaty-contracts@0.0.15", "", { "dependencies": { "@cfworker/json-schema": "4.1.1" }, "bin": { "treaty": "dist/cli.js" } }, "sha512-7JE6yFDT6ICWY8/iY1PuLIQF9vot0UhONAdvNn+ZCDAEd0B7ypoiWdmaGLvhjBXiXJ0ObjdotsIMuf2UMGWv2A=="],
 
     "@superjackfruitlabs/treaty-matrix-events": ["@superjackfruitlabs/treaty-matrix-events@0.0.14", "", {}, "sha512-1RoHyO09in3Riiyyd4jQ/xRZdutHABwcHuG0MxONVfsCQ63jdrxrZLlrpRaruSuaJ/wiEcpxr5Xmlp+WaeFlKg=="],
 

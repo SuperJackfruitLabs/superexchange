@@ -41,6 +41,7 @@ import {
 } from "../src/board-chat/index.ts";
 import { createRelayHandler } from "../src/routes/relay.ts";
 import type { QuestionOffer } from "../src/store/index.ts";
+import { checkedFetch, decisions, plane as planeApi } from "./contracts.ts";
 import { RELAY_SECRET, captureLog, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -256,7 +257,12 @@ function fakePlane() {
     }
     return Response.json({ error: "not_found" }, { status: 404 });
   }) as typeof globalThis.fetch;
-  return { fetch, state, assertions, identities };
+  return {
+    fetch: checkedFetch(planeApi, fetch),
+    state,
+    assertions,
+    identities,
+  };
 }
 
 /** SuperPipeline's answer route; answers what `next` says. */
@@ -283,7 +289,7 @@ function fakeBoard() {
       { status: next.status },
     );
   }) as typeof globalThis.fetch;
-  return { fetch, answers, state };
+  return { fetch: checkedFetch(decisions, fetch), answers, state };
 }
 
 function setup({ joined = true }: { joined?: boolean } = {}) {
@@ -1311,13 +1317,13 @@ describe("SuperPipeline's question routes", () => {
     const reads = createSuperpipelineReads({
       baseUrl: `${SP_URL}/`,
       tokens: { get: async () => "svc-token", invalidate: () => undefined },
-      fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      fetch: checkedFetch(decisions, async (input, init) => {
         calls.push({
           path: new URL(String(input)).pathname,
           authorization: new Headers(init?.headers).get("authorization"),
         });
         return Response.json(body);
-      }) as typeof globalThis.fetch,
+      }),
     });
     expect(await reads.pendingQuestions(BOARD)).toEqual([questionBody()]);
     expect(calls).toEqual([
@@ -1340,11 +1346,9 @@ describe("SuperPipeline's question routes", () => {
         get: async () => "svc-token",
         invalidate: () => void dropped++,
       },
-      fetch: (async () =>
-        Response.json(
-          { error: { code: "UNAUTHORIZED" } },
-          { status: 401 },
-        )) as unknown as typeof globalThis.fetch,
+      fetch: checkedFetch(decisions, async () =>
+        Response.json({ error: { code: "UNAUTHORIZED" } }, { status: 401 }),
+      ),
     });
     await expect(reads.pendingQuestions(BOARD)).rejects.toThrow(
       "401 (UNAUTHORIZED)",

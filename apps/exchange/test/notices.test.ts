@@ -79,6 +79,7 @@ import {
   jwt,
   relayRequest,
 } from "./board-fakes.ts";
+import { checkedFetch, plane as planeApi } from "./contracts.ts";
 import { captureLog, gateBody, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -378,7 +379,7 @@ function setup({
   const accounts = createAccounts({
     url: PLANE_URL,
     credential: CREDENTIAL,
-    fetch: planeFetch,
+    fetch: checkedFetch(planeApi, planeFetch),
   });
   const mint = (subject: { principalId: string; senderMxid: string }) =>
     accounts.assert({ ...subject, audience: SP_URL });

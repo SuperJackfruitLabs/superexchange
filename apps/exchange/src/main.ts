@@ -261,8 +261,8 @@ const questionSweep = startQuestionSweep(
   { intervalMs: config.sweepSeconds * 1000 },
 );
 
-// Both read routes SuperPipeline does not yet admit a service token on: until it does, every
-// board is unreadable there, nothing is settled, and each sweep backs off on its own.
+// The follow-ups a board is still owed and the cards waiting on a person, read on the same
+// `gates:read` token. Each sweep backs off on its own while every board fails.
 const followupSweep = startFollowupSweep(
   { store, board: reads, chat: boardChat, log },
   { intervalMs: config.sweepSeconds * 1000 },

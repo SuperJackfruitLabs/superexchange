@@ -6,7 +6,8 @@
  * Ported from the AgentPod hub's `auth/org-plane/client.ts` (the three calls), `assertion.ts`
  * (the `sub` check and the receipt codes) and the `principalForMatrixId` it wires for gates:
  *
- * - `GET /api/identities/matrix/:mxid`: the principal a Matrix id is linked to; 404 is nobody.
+ * - `GET /api/identities/matrix/:mxid`: the principal a Matrix id is linked to; 404 is nobody,
+ *   `identity_pending` (a link still in its hold) included.
  * - `GET /api/principals/:id`: what kind of principal that is (`human`, `agent`, `service`), and
  *   its name for the receipt.
  * - `POST /api/token/assertion` with `{ identity: { system: "matrix", externalId }, audience }`:

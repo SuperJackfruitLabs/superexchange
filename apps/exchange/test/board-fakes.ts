@@ -7,6 +7,7 @@ import {
   signDelivery,
   toBinary,
 } from "@superjackfruitlabs/treaty-cloudevents";
+import { checkedFetch, decisions, plane } from "./contracts.ts";
 import { RELAY_SECRET } from "./helpers.ts";
 
 export const SERVER = "staging-matrix.example.test";
@@ -128,7 +129,7 @@ export function fakePlane() {
     }
     return Response.json({ error: "not_found" }, { status: 404 });
   }) as typeof globalThis.fetch;
-  return { fetch, state, identities };
+  return { fetch: checkedFetch(plane, fetch), state, identities };
 }
 
 /** SuperPipeline's person routes; each answers what `next` says. */
@@ -155,7 +156,7 @@ export function fakeBoard() {
       { status: next.status },
     );
   }) as typeof globalThis.fetch;
-  return { fetch, calls, state };
+  return { fetch: checkedFetch(decisions, fetch), calls, state };
 }
 
 /** A relay delivery of `data` as CloudEvents type `type`, signed with the test secret. */

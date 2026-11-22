@@ -66,6 +66,7 @@ import {
   jwt,
   relayRequest,
 } from "./board-fakes.ts";
+import { checkedFetch, decisions } from "./contracts.ts";
 import { captureLog, tempStore } from "./helpers.ts";
 
 const cleanups: Array<() => void> = [];
@@ -1431,13 +1432,13 @@ describe("SuperPipeline's follow-up and waiting-card routes", () => {
     const reads = createSuperpipelineReads({
       baseUrl: `${SP_URL}/`,
       tokens: { get: async () => "svc-token", invalidate: () => undefined },
-      fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+      fetch: checkedFetch(decisions, async (input, init) => {
         calls.push({
           path: new URL(String(input)).pathname,
           authorization: new Headers(init?.headers).get("authorization"),
         });
         return Response.json(body);
-      }) as typeof globalThis.fetch,
+      }),
     });
     expect(await reads.pendingFollowups(BOARD)).toEqual([owed()]);
     expect(await reads.pendingAttention(BOARD)).toEqual([blocked()]);
