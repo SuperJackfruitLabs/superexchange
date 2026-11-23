@@ -1,9 +1,9 @@
 ---
 title: Status and limits
-description: Where SuperExchange stands. v0.0.3 in production, carrying production boards, what works today, and the gaps other products still owe it.
+description: Where SuperExchange stands. v0.0.5 in production, carrying production boards, what works today, and the gaps other products still owe it.
 ---
 
-SuperExchange is early. **v0.0.3** is the current production release (2026-11-13); v0.0.2 was the
+SuperExchange is early. **v0.0.5** is the current production release (2026-11-23); v0.0.2 was the
 first release in production. Production boards are opted in and carried by SuperExchange; a board
 is moved one at a time, by listing it in AgentPod's `BOARD_CHAT_MOVED_BOARDS` and then opting it in
 here. A board that has not moved is spoken for, if at all, by AgentPod's hub, as before.
@@ -19,7 +19,11 @@ person's answer back, and reconcile work that took another route.
   exactly once after a person has joined, and answered from the room as that person.
 - Reminders, escalations, quorum progress, released and pulled-back approvals, failed and
   overridden checks, said once in reply to their card.
+- Gate messages list the opening run's linked artifacts, keeping pinned SuperLibrary version
+  links, and say so when there are none.
 - Pull-backs and check overrides sent from chat.
+- A relay delivery that cannot be handled yet (a notice for a card that has arrived but is not yet
+  posted, or a store failure) is answered 503, so the relay sends it again instead of losing it.
 - The gate and question sweeps: cards the relay missed are posted, and cards settled on the
   board are settled in chat.
 - A person linked to nobody is told how to link, at most once a day per room.
