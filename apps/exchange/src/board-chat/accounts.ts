@@ -94,8 +94,11 @@ export interface Accounts {
   ): Promise<{ accessToken: string; expiresIn: number }>;
 }
 
-/** A principal id as the plane writes one; anything else names nobody and is not asked about. */
-const PRINCIPAL_ID = /^prn_[A-Za-z0-9_-]{1,64}$/;
+/**
+ * A principal id in treaty's grammar (`plane.v1`'s `PrincipalId`); anything else names nobody and
+ * is not asked about.
+ */
+const PRINCIPAL_ID = /^prn_[0-9a-f]{20}$/;
 
 /** A Matrix user id, as an invite takes one; anything else is never invited. */
 const MATRIX_ID = /^@[^\s:]{1,255}:[^\s]{1,255}$/;

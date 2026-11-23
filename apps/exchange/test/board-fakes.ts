@@ -89,17 +89,21 @@ export function fakeHomeserver() {
 export function fakePlane() {
   const state = { down: false };
   const identities: Record<string, string> = {
-    [ANA]: "prn_ana",
-    [AGENT]: "prn_cody",
+    [ANA]: "prn_a11ce000000000000005",
+    [AGENT]: "prn_a11ce000000000000004",
   };
   const principals: Record<string, Record<string, unknown>> = {
-    prn_ana: {
-      id: "prn_ana",
+    prn_a11ce000000000000005: {
+      id: "prn_a11ce000000000000005",
       kind: "human",
       handle: "ana",
       displayName: "Ana",
     },
-    prn_cody: { id: "prn_cody", kind: "agent", handle: "cody" },
+    prn_a11ce000000000000004: {
+      id: "prn_a11ce000000000000004",
+      kind: "agent",
+      handle: "cody",
+    },
   };
   const fetch = (async (input: URL | RequestInfo, init?: RequestInit) => {
     if (state.down) throw new TypeError(`connect ECONNREFUSED ${PLANE_URL}`);

@@ -14,7 +14,7 @@
     "check": "bun run fmt:check && bun run typecheck && bun run lint && bun run test"
   },
   "devDependencies": {
-    "@superjackfruitlabs/treaty-contracts": "0.0.15",
+    "@superjackfruitlabs/treaty-contracts": "0.0.17",
     "@types/bun": "1.2.8",
     "oxlint": "1.88.0",
     "oxlint-tsgolint": "7.0.2004",

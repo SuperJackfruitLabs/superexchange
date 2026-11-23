@@ -15,12 +15,18 @@
  *   never handle;
  * - a body that is not what its type says (a gate, a question, a follow-up, a waiting card, a
  *   notice by treaty's predicate and its `event`): 400;
+ * - a notice for a gate or a question delivered here and not yet posted: 503, so the relay sends
+ *   it again once its card is up (`cardOnItsWay`);
  * - a notice whose card was never posted here, or is settled, or a board with no room: 200
  *   `{status:"ignored"}`;
  * - one for an opted-in, enabled board: recorded once, 200 `{status:"accepted"}`, and handed to
  *   board chat to post (a redelivery too: one not yet posted is tried again);
  * - one for any other board, and an approval request for a board outside this
- *   service's workspace (`approvalRequestAllowed`; absent, none is kept): 200 `{status:"ignored"}`.
+ *   service's workspace (`approvalRequestAllowed`; absent, none is kept): 200 `{status:"ignored"}`;
+ * - one that could not be handled just now (the store threw): 503, logged without the error.
+ *
+ * The answers are the suite's receiver status contract (treaty `schemas/README.md`): 2xx handled or
+ * permanently ignored, 503 transient and sent again, any other 4xx refused for good.
  */
 import {
   SIGNATURE_HEADER,
@@ -88,7 +94,7 @@ export interface RelayDeps {
 
 export function createRelayHandler(deps: RelayDeps) {
   const log = deps.log ?? console.log;
-  return async (request: Request): Promise<Response> => {
+  const handler = async (request: Request): Promise<Response> => {
     const bytes = await readBody(request, MAX_RELAY_BODY);
     if (bytes === null) return tooLarge();
 
@@ -117,7 +123,24 @@ export function createRelayHandler(deps: RelayDeps) {
       return Response.json({ error: "bad signature" }, { status: 401 });
     }
 
-    const type = attributes.type;
+    try {
+      return await take(attributes.type, id, bytes);
+    } catch {
+      // The error may name a path or a setting: it is not logged, only that it happened.
+      log(
+        `relay: event ${JSON.stringify(id)} answered 503: it could not be handled just now; the relay sends it again`,
+      );
+      return Response.json({ error: "try again" }, { status: 503 });
+    }
+  };
+
+  return handler;
+
+  async function take(
+    type: string | undefined,
+    id: string,
+    bytes: Uint8Array,
+  ): Promise<Response> {
     const noticeType = noticeTypeOf(type);
     if (
       noticeType === undefined &&
@@ -146,6 +169,12 @@ export function createRelayHandler(deps: RelayDeps) {
           { error: `not a ${noticeType.what}` },
           { status: 400 },
         );
+      }
+      if (intake.status === "later") {
+        log(
+          `relay: a ${noticeType.what} event ${JSON.stringify(id)} answered 503 (${intake.reason}); the relay sends it again`,
+        );
+        return Response.json({ error: intake.reason }, { status: 503 });
       }
       if (intake.status === "ignored") {
         log(
@@ -221,5 +250,5 @@ export function createRelayHandler(deps: RelayDeps) {
     );
     deps.onGateAccepted?.(intake.gateId);
     return Response.json({ status: "accepted" });
-  };
+  }
 }

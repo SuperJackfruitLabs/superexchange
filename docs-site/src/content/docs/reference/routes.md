@@ -42,14 +42,20 @@ timestamp, the event id and the exact body, and checked with treaty's `verifyDel
 data is read ([how a subscriber verifies](https://treaty.superjackfruit.com/relay/#verifying-a-delivery)).
 A body over 256 KiB is refused.
 
+The answer follows the suite's one receiver status contract
+([treaty](https://treaty.superjackfruit.com/relay/)): `2xx` is handled or permanently ignored,
+`503` is transient and the relay sends it again, and any other `4xx` is refused for good.
+
 | Delivery | Answer |
 | --- | --- |
 | Not a CloudEvent | `400`, before the signature is checked (there is no id to check it over) |
 | A bad, stale or missing signature | `401` |
 | A type SuperExchange does not handle | `200 {"status":"ignored"}`, so the relay does not retry it |
 | A body that is not what its type says | `400` |
+| A notice for a gate or question delivered here and not yet posted | `503`, so the relay sends it again once its card is up |
 | A notice whose card was never posted here, or is settled, or a board with no room | `200 {"status":"ignored"}` |
 | One for an opted-in, enabled board | Recorded once, `200 {"status":"accepted"}`, and handed on to post (a redelivery too) |
 | One for any other board, or an approval request outside this service's workspace | `200 {"status":"ignored"}` |
+| One this service could not handle just now (its store failed) | `503`, so the relay sends it again |
 
 The types handled are listed in [Events carried](/reference/events/).

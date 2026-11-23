@@ -49,7 +49,7 @@ const CREDENTIAL = {
   id: `svc_${"0a".repeat(10)}`,
   secret: "plane-secret-for-tests",
 };
-const ANA_PRN = "prn_ana";
+const ANA_PRN = "prn_a11ce000000000000005";
 
 interface Sent {
   roomId: string;
@@ -459,7 +459,7 @@ describe("a gate decided elsewhere", () => {
     s.sp.pending[BOARD] = [];
     s.sp.pending[BOARD_B] = [];
     s.sp.gates.gte_1 = resolved({
-      decidedBy: "prn_someone_else",
+      decidedBy: "prn_a11ce000000000000002",
       pulledBack: { by: ANA_PRN, at: "t", comment: "wait" },
     });
     await s.sweep();

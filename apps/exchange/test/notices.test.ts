@@ -130,7 +130,10 @@ function escalation(over: Partial<DecisionTimeoutDelivery> = {}) {
 
 const QUORUM = { required: 2, from: "deciders", approvals: [] };
 
-function approval(principalId = "prn_ana", earlier: string[] = []) {
+function approval(
+  principalId = "prn_a11ce000000000000005",
+  earlier: string[] = [],
+) {
   return {
     event: "gate.approval_recorded",
     boardId: BOARD,
@@ -165,7 +168,7 @@ const pulledBack = (over: Record<string, unknown> = {}) => ({
   boardId: BOARD,
   cardId: CARD,
   gateId: "gte_1",
-  pulledBackBy: "prn_ana",
+  pulledBackBy: "prn_a11ce000000000000005",
   at: T,
   comment: "wrong image",
   ...over,
@@ -191,7 +194,7 @@ const checkOverridden = (over: Record<string, unknown> = {}) => ({
   arrivalId: "arr_1",
   stageKey: "review",
   check: { name: "build", provider: "ci", status: "overridden" },
-  by: "prn_ana",
+  by: "prn_a11ce000000000000005",
   comment: "flaky runner",
   at: T,
   ...over,
@@ -283,8 +286,8 @@ function setup({
   clock = null as { now: Date } | null,
   org = "org_1",
   admins = [
-    { id: "prn_bea", role: "owner", mxid: BEA },
-    { id: "prn_cal", role: "admin", mxid: CAL },
+    { id: "prn_a11ce000000000000006", role: "owner", mxid: BEA },
+    { id: "prn_a11ce000000000000007", role: "admin", mxid: CAL },
   ] as Admin[],
 } = {}) {
   const t = tempStore(clock ? () => clock.now : undefined);
@@ -339,7 +342,12 @@ function setup({
       if (state.adminsDown)
         return Response.json({ error: "x" }, { status: 503 });
       return Response.json([
-        { id: "prn_ana", kind: "human", role: "member", suspended: false },
+        {
+          id: "prn_a11ce000000000000005",
+          kind: "human",
+          role: "member",
+          suspended: false,
+        },
         ...state.admins.map((a) => ({
           id: a.id,
           kind: "human",
@@ -673,6 +681,53 @@ describe("the relay's board-room notices", () => {
     expect(r.accepted).toEqual([]);
   });
 
+  test("a notice for a gate delivered here but not yet posted is 503, so the relay sends it again", async () => {
+    const s = setup();
+    const r = relay(s);
+    intakeGate(s.store, gateBody({ quorum: QUORUM }));
+    for (const [body, type] of [
+      [timeout(), DECISION_REMINDED_V1],
+      [approval(), GATE_APPROVAL_RECORDED_V1],
+      [released(), DECISION_RELEASED_V1],
+    ] as const) {
+      const res = await r.handle(await relayRequest(body, type));
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: "card not posted yet" });
+    }
+    expect(s.store.unpostedNotices()).toEqual([]);
+    expect(r.accepted).toEqual([]);
+
+    // Once its card is up, the redelivery is taken.
+    expect((await s.chat.post("gte_1")).status).toBe("posted");
+    const res = await r.handle(
+      await relayRequest(timeout(), DECISION_REMINDED_V1),
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: "accepted" });
+
+    // A delivered gate the board settled before it was posted never will be: ignored.
+    intakeGate(s.store, gateBody({ gateId: "gte_2" }));
+    s.store.settleGateDelivery("gte_2");
+    const settled = await r.handle(
+      await relayRequest(
+        timeout({ decisionId: "gte_2" }),
+        DECISION_REMINDED_V1,
+      ),
+    );
+    expect(settled.status).toBe(200);
+    expect(await settled.json()).toEqual({ status: "ignored" });
+
+    // A question on its way is waited for the same way.
+    await intakeQuestion(s.store, questionBody());
+    const question = await r.handle(
+      await relayRequest(
+        timeout({ decisionKind: "question", decisionId: "elc_1" }),
+        DECISION_REMINDED_V1,
+      ),
+    );
+    expect(question.status).toBe(503);
+  });
+
   test("a release or a pull-back on a settled gate is said: it follows the held approval's receipt", async () => {
     const s = setup();
     await s.gate();
@@ -829,16 +884,20 @@ describe("an escalation", () => {
   test("invites the workspace's owners and admins with a linked Matrix id, then replies to the card", async () => {
     const s = setup({
       admins: [
-        { id: "prn_bea", role: "owner", mxid: BEA },
-        { id: "prn_cal", role: "admin", mxid: CAL },
+        { id: "prn_a11ce000000000000006", role: "owner", mxid: BEA },
+        { id: "prn_a11ce000000000000007", role: "admin", mxid: CAL },
         {
-          id: "prn_dee",
+          id: "prn_a11ce000000000000008",
           role: "admin",
           suspended: true,
           mxid: `@dee:${SERVER}`,
         },
-        { id: "prn_eve", role: "admin" },
-        { id: "prn_fay", role: "member", mxid: `@fay:${SERVER}` },
+        { id: "prn_a11ce000000000000009", role: "admin" },
+        {
+          id: "prn_a11ce00000000000000a",
+          role: "member",
+          mxid: `@fay:${SERVER}`,
+        },
       ],
     });
     const g = await s.gate();
@@ -1203,7 +1262,10 @@ describe("a quorum gate's recorded approval", () => {
   test("an approver the plane cannot name is left out, never shown by id", async () => {
     const s = setup();
     await s.gate({ quorum: QUORUM });
-    await s.notice(GATE_APPROVAL_RECORDED_V1, approval("prn_unknown"));
+    await s.notice(
+      GATE_APPROVAL_RECORDED_V1,
+      approval("prn_a11ce000000000000003"),
+    );
     expect(s.said()).toContain(
       gateProgressBody({
         who: null,
@@ -1213,7 +1275,7 @@ describe("a quorum gate's recorded approval", () => {
       }),
     );
     // The prose never names an id; the structured half carries it, as treaty's schema says.
-    expect(s.said().join("\n")).not.toContain("prn_unknown");
+    expect(s.said().join("\n")).not.toContain("prn_a11ce000000000000003");
   });
 });
 
@@ -1237,7 +1299,9 @@ describe("a held approval", () => {
     expect(s.ofType(DECISION_RELEASED_TYPE)).toHaveLength(1);
     const pulled = s.ofType(DECISION_PULLED_BACK_TYPE);
     expect(pulled).toHaveLength(1);
-    expect(JSON.stringify(pulled[0]?.content)).not.toContain("prn_ana");
+    expect(JSON.stringify(pulled[0]?.content)).not.toContain(
+      "prn_a11ce000000000000005",
+    );
   });
 });
 
@@ -1314,7 +1378,7 @@ describe("a failed or overridden check", () => {
       ),
     );
     expect(JSON.stringify(s.ofType(CHECK_OVERRIDDEN_TYPE))).not.toContain(
-      "prn_ana",
+      "prn_a11ce000000000000005",
     );
   });
 
@@ -1398,7 +1462,7 @@ describe("a pull-back from chat", () => {
     expect(s.board.calls).toEqual([
       {
         path: `/v1/boards/${BOARD}/gates/gte_1/pull-back`,
-        authorization: `Bearer ${jwt({ sub: "prn_ana" })}`,
+        authorization: `Bearer ${jwt({ sub: "prn_a11ce000000000000005" })}`,
         body: { comment: "wrong image" },
       },
     ]);
@@ -1548,7 +1612,7 @@ describe("a check override from chat", () => {
     expect(s.board.calls).toEqual([
       {
         path: `/v1/boards/${BOARD}/cards/${CARD}/checks/build/override`,
-        authorization: `Bearer ${jwt({ sub: "prn_ana" })}`,
+        authorization: `Bearer ${jwt({ sub: "prn_a11ce000000000000005" })}`,
         body: { comment: "flaky runner" },
       },
     ]);
@@ -1706,7 +1770,7 @@ test("no secret, token, URL or comment reaches a log on any path", async () => {
   for (const secret of [
     CREDENTIAL.secret,
     CREDENTIAL.id,
-    jwt({ sub: "prn_ana" }),
+    jwt({ sub: "prn_a11ce000000000000005" }),
     PLANE_URL,
     SP_URL,
     AS_TOKEN,
