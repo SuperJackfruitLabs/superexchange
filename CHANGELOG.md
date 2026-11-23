@@ -5,6 +5,11 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+- A gate cancelled on the board (its card moved by hand or archived while the review was pending)
+  now closes its card in chat. The sweep reads the gate as `cancelled` and posts treaty's
+  `cancelled` receipt, naming nobody, once; a cancelled gate not yet posted is never posted.
+  Before, the card stayed open and answerable. Needs treaty v0.0.18.
+
 ## v0.0.5 — 2026-11-23
 
 - Relay deliveries follow the suite's receiver status contract. A reminder, an escalation or a

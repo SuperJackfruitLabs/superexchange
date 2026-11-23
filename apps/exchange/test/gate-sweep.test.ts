@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  GATE_CANCELLED_DECISION,
   GATE_OUTCOME_TYPE,
   gateOutcomeBody,
   gateOutcomeContent,
@@ -451,6 +452,83 @@ describe("a gate decided elsewhere", () => {
     expect(s.lines.join("\n")).toContain(
       'the sweep could not settle gate "gte_2" on brd_7c1f (SuperPipeline answered 404 (GATE_NOT_FOUND))',
     );
+  });
+
+  test("cancelled (its card moved or archived): one receipt, treaty's cancelled, naming nobody", async () => {
+    const s = setup();
+    s.posted();
+    s.sp.pending[BOARD] = [];
+    s.sp.pending[BOARD_B] = [];
+    // The board's read of a gate cancelled with its card: no decision, no decider.
+    s.sp.gates.gte_1 = resolved({
+      status: "cancelled",
+      decision: null,
+      decidedBy: null,
+    });
+
+    expect((await s.sweep()).settled).toBe(1);
+    const cancelled = {
+      decision: GATE_CANCELLED_DECISION,
+      decidedBy: null,
+      chosen: null,
+      heldUntil: null,
+    };
+    expect(s.hs.sent).toEqual([
+      {
+        roomId: ROOM,
+        type: "m.room.message",
+        txnId: "superexchange.gate.gte_1.outcome.prose",
+        content: { msgtype: "m.text", body: gateOutcomeBody(cancelled) },
+      },
+      {
+        roomId: ROOM,
+        type: GATE_OUTCOME_TYPE,
+        txnId: "superexchange.gate.gte_1.outcome.card",
+        content: gateOutcomeContent({
+          ...cancelled,
+          gateId: "gte_1",
+          boardId: BOARD,
+          gateEventId: CARD,
+        }),
+      },
+    ]);
+    expect(s.hs.sent[0]?.content.body).toStartWith("Cancelled — ");
+    expect(s.store.gateEvent("gte_1")).toMatchObject({
+      settledDecision: "cancelled",
+      outcomePostedAt: expect.any(String),
+    });
+    // The principals plane is not asked: nobody decided it.
+    expect(
+      s.plane.calls.some((c) => c.path.startsWith("/api/principals")),
+    ).toBe(false);
+
+    // Settled once: a second pass reads nothing more and says nothing more.
+    const reads = s.sp.gateReads().length;
+    expect((await s.sweep()).settled).toBe(0);
+    expect(s.sp.gateReads().length).toBe(reads);
+    expect(s.hs.sent.length).toBe(2);
+  });
+
+  test("cancelled before it was posted: it is never posted", async () => {
+    const s = setup();
+    s.store.recordMembership(ROOM, ANA, "leave");
+    s.store.recordGateDelivery("gte_1", BOARD, GATE);
+    s.sp.pending[BOARD] = [];
+    s.sp.pending[BOARD_B] = [];
+    s.sp.gates.gte_1 = resolved({
+      status: "cancelled",
+      decision: null,
+      decidedBy: null,
+    });
+    expect((await s.sweep()).settled).toBe(1);
+    expect(s.store.unpostedGates()).toEqual([]);
+
+    s.store.recordMembership(ROOM, ANA, "join");
+    expect(await s.chat.post("gte_1")).toEqual({
+      status: "skipped",
+      reason: "settled",
+    });
+    expect(s.hs.sent).toEqual([]);
   });
 
   test("a held approval pulled back reads as changes requested, by who pulled it back", async () => {
