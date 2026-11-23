@@ -5,12 +5,18 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+## v0.0.5 — 2026-11-23
+
 - Relay deliveries follow the suite's receiver status contract. A reminder, an escalation or a
   quorum, release or pull-back notice for a gate or question that has arrived but is not yet
   posted is answered 503, so the relay sends it again instead of losing it; a delivery the
   service could not handle just now (its store failed) is 503 too, rather than an unhandled 500.
 - A principal id is asked about only when it is in treaty's grammar (`prn_` and 20 hex digits);
   a looser id names nobody and reaches neither the organization plane nor an invite.
+- No change in behaviour: `treaty.json` declares what SuperExchange produces and consumes, and CI
+  runs `treaty verify` against it. Tests hold every request the SuperPipeline and Accounts clients
+  send to treaty's `decisions.v1` and `plane.v1` contracts, and run the plane's refusals through
+  the Accounts client.
 - Treaty 0.0.17.
 
 ## v0.0.4 — 2026-11-16
