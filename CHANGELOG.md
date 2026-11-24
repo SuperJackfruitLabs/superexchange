@@ -5,6 +5,8 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+## v0.0.6 — 2026-11-24
+
 - A gate cancelled on the board (its card moved by hand or archived while the review was pending)
   now closes its card in chat. The sweep reads the gate as `cancelled` and posts treaty's
   `cancelled` receipt, naming nobody, once; a cancelled gate not yet posted is never posted.
