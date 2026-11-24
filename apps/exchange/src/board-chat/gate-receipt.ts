@@ -4,8 +4,9 @@
  * both ways a gate stops being pending here:
  *
  * - a person's answer in chat (`gate-answer.ts`), once the board took it;
- * - a decision made anywhere else (on the web, in `supi`, by another path), found by the sweep
- *   (`gate-sweep.ts`) and settled with `settleGate`.
+ * - a decision made anywhere else (on the web, in `supi`, by another path), or the board
+ *   cancelling the gate (its card moved or archived), found by the sweep (`gate-sweep.ts`) and
+ *   settled with `settleGate`.
  *
  * One receipt per gate, whichever comes first: both claim the same outcome columns before
  * anything is sent, and both send under the same transaction ids (`gateTxnId`), so even a retry

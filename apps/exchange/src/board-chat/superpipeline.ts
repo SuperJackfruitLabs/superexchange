@@ -324,8 +324,9 @@ export class SuperpipelineError extends Error {
 /** One gate as its board reads it now, kept to what a receipt needs. */
 export interface BoardGate {
   /**
-   * `pending`, `resolved` or `cancelled` (a card moved or archived with its review pending). Only
-   * `resolved` with a decision settles a card here; anything else is left alone.
+   * `pending`, `resolved` or `cancelled` (a card moved or archived with its review pending).
+   * `resolved` with a decision, or `cancelled`, settles a card here (`gate-sweep.ts`); anything
+   * else is left alone.
    */
   status: string;
   decision: string | null;

@@ -9,12 +9,14 @@
  *    missed one, or gave up) is recorded as if it had been delivered and posted like any other;
  *    a pending gate delivered and not yet posted is offered again (its post holds for a join,
  *    fails closed on encryption, and is idempotent on its claim, so offering twice is harmless).
- * 2. **Gates decided elsewhere.** A gate this service holds (posted without a receipt, or
- *    delivered and not yet posted) that the board no longer lists as pending is read. Only one
- *    the board reads as `resolved`, with a decision, is settled (`gate-receipt.ts`): its receipt,
- *    the same treaty content the answer path posts, once; or, never posted, it never is. Absence
- *    from the list is not a decision: a gate the board cannot say how it was decided is left as
- *    it is, and a board whose list could not be read settles nothing.
+ * 2. **Gates decided or cancelled elsewhere.** A gate this service holds (posted without a
+ *    receipt, or delivered and not yet posted) that the board no longer lists as pending is read.
+ *    One the board reads as `resolved`, with a decision, or as `cancelled` (its card moved by hand
+ *    or archived with the review pending; SuperPipeline publishes no event of its own for that) is
+ *    settled (`gate-receipt.ts`): its receipt, the same treaty content the answer path posts,
+ *    once; or, never posted, it never is. Absence from the list is not a decision: a gate the
+ *    board cannot say how it ended is left as it is, and a board whose list could not be read
+ *    settles nothing.
  *
  * A board that cannot be read (404 for a board not in this service's workspace, 403 without
  * `gates:read`, a refused or missing token, a board down) is logged and stepped over: the boards
@@ -27,14 +29,19 @@
  * Reminders and escalations are not swept: they arrive from the relay (`notices.ts`), and an
  * unposted one is tried again by the notice retry.
  */
-import { isGatePending } from "@superjackfruitlabs/treaty-matrix-events";
+import {
+  GATE_CANCELLED_DECISION,
+  isGatePending,
+} from "@superjackfruitlabs/treaty-matrix-events";
 import type { Store } from "../store/index.ts";
 import { AccountsError } from "./accounts.ts";
 import type { BoardChat } from "./gate-card.ts";
+import type { GateDecided } from "./gate-receipt.ts";
 import { intakeGate } from "./gates.ts";
 import { describe as describeClientError } from "./rooms.ts";
 import {
   SuperpipelineError,
+  type BoardGate,
   type SuperpipelineReads,
 } from "./superpipeline.ts";
 import { startSweeper, type Sweeper, type SweeperOptions } from "./sweeper.ts";
@@ -142,18 +149,10 @@ export async function sweepGates(
       if (stillPending.has(gateId)) continue;
       try {
         const gate = await deps.board.gate(boardId, gateId);
+        const decided = await decidedOf(deps, gate);
         // Absence is not a decision: a gate the board cannot say how was decided is left alone.
-        if (gate.status !== "resolved" || gate.decision === null) continue;
-        // A held approval pulled back went back for rework: it reads as changes requested, by
-        // whoever pulled it back, never as an approval that will act (the hub's rule).
-        const pulledBack = gate.pulledBackBy !== null;
-        const decider = pulledBack ? gate.pulledBackBy : gate.decidedBy;
-        const outcome = await deps.chat.settle(gateId, {
-          decision: pulledBack ? "request_changes" : gate.decision,
-          decidedBy: decider ? await label(deps, decider) : null,
-          chosen: pulledBack ? null : gate.chosen,
-          heldUntil: pulledBack ? null : gate.heldUntil,
-        });
+        if (decided === null) continue;
+        const outcome = await deps.chat.settle(gateId, decided);
         if (outcome === "settled" || outcome === "withdrawn") result.settled++;
       } catch (error) {
         result.failedGates++;
@@ -177,6 +176,42 @@ export async function sweepGates(
     );
   }
   return result;
+}
+
+/**
+ * What a held gate's receipt says, from the board's read of it, or null when the read says nothing
+ * a receipt can:
+ *
+ * - `resolved` with a decision: that decision, by its decider's label. A held approval pulled back
+ *   went back for rework: it reads as changes requested, by whoever pulled it back, never as an
+ *   approval that will act (the hub's rule).
+ * - `cancelled`: the board ended it without a decision (its card was moved by hand or archived with
+ *   the review pending). Treaty's `cancelled`, naming nobody: the card must close, or it stays
+ *   answerable for a review the board will no longer take.
+ * - anything else (still `pending` though unlisted, resolved without a decision, a status this
+ *   build does not know): null.
+ */
+async function decidedOf(
+  deps: GateSweepDeps,
+  gate: BoardGate,
+): Promise<GateDecided | null> {
+  if (gate.status === "cancelled") {
+    return {
+      decision: GATE_CANCELLED_DECISION,
+      decidedBy: null,
+      chosen: null,
+      heldUntil: null,
+    };
+  }
+  if (gate.status !== "resolved" || gate.decision === null) return null;
+  const pulledBack = gate.pulledBackBy !== null;
+  const decider = pulledBack ? gate.pulledBackBy : gate.decidedBy;
+  return {
+    decision: pulledBack ? "request_changes" : gate.decision,
+    decidedBy: decider ? await label(deps, decider) : null,
+    chosen: pulledBack ? null : gate.chosen,
+    heldUntil: pulledBack ? null : gate.heldUntil,
+  };
 }
 
 /** A decider's label for the receipt; null when the plane cannot say, never their id. */
