@@ -46,12 +46,13 @@ What the baseline holds, and why it is held rather than cleared:
 
 Run by `bun test`. It holds:
 
-- **the layers**, lowest first: `config` < `store` < `appservice` < `board-chat` < `routes` <
-  `main`. A file belongs to the layer named by its first path segment under `src/`. An import
-  stays in its layer or points down; a new top-level folder fails until it is placed in the
-  list. The order is read from the code: every layer imports the one just below it, except
-  `store`, which knows no settings and sits beside `config` (`UNJOINED_NEIGHBOURS`). Swapping
-  two layers fails.
+- **the layers**, lowest first: `config` < `store` < `appservice` < `board-chat` < `calls` <
+  `routes` < `main`. A file belongs to the layer named by its first path segment under `src/`.
+  An import stays in its layer or points down; a new top-level folder fails until it is placed
+  in the list. The order is read from the code: every layer imports the one just below it,
+  except `store`, which knows no settings and sits beside `config`, and `calls` (superdial's
+  token service), which knows no board and sits beside `board-chat` (`UNJOINED_NEIGHBOURS`).
+  Swapping two layers fails.
 - **no runtime import cycle** under `src/` (`LARGEST_CYCLE`, 0). An edge is a static import or
   re-export that brings in a value, a bare `import "./x.ts"`, or a dynamic `import()`. A
   type-only import is erased before the code runs and is not an edge.
