@@ -12,6 +12,7 @@
  */
 export {
   CallUpstreamError,
+  fieldOf,
   isDelayId,
   isDeviceId,
   isRoomId,

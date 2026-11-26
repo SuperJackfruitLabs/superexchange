@@ -12,13 +12,27 @@ interface Seen {
   body: unknown;
 }
 
+/** The error a promise rejects with, which must be a CallUpstreamError. */
+async function upstreamError(
+  promise: Promise<unknown>,
+): Promise<CallUpstreamError> {
+  const error = await promise.then(
+    () => null,
+    (e: unknown) => e,
+  );
+  if (!(error instanceof CallUpstreamError)) {
+    throw new Error("expected a CallUpstreamError");
+  }
+  return error;
+}
+
 /** A fetch that records each request and answers with `answer`'s status and JSON. */
 function fakeFetch(
   answer: (url: string) => { status: number; json?: unknown } | "throw",
 ) {
   const seen: Seen[] = [];
-  const fetch: typeof globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = String(input);
+  const impl = async (input: string | URL | Request, init?: RequestInit) => {
+    const url = input instanceof Request ? input.url : input.toString();
     seen.push({
       url,
       method: init?.method ?? "GET",
@@ -30,7 +44,10 @@ function fakeFetch(
     return new Response(a.json === undefined ? "" : JSON.stringify(a.json), {
       status: a.status,
     });
-  }) as typeof globalThis.fetch;
+  };
+  const fetch: typeof globalThis.fetch = Object.assign(impl, {
+    preconnect: () => {},
+  });
   return { fetch, seen };
 }
 
@@ -99,13 +116,10 @@ describe("calls: the homeserver's OpenID check", () => {
   test("a homeserver that cannot answer throws, without quoting the token", async () => {
     for (const answer of [{ status: 500 }, "throw" as const]) {
       const f = fakeFetch(() => answer);
-      const error = await hs(f.fetch)
-        .verifyOpenId(openid())
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(CallUpstreamError);
-      expect((error as CallUpstreamError).service).toBe("homeserver");
-      expect(String(error)).not.toContain(ACCESS);
-      expect((error as Error).cause).toBeUndefined();
+      const error = await upstreamError(hs(f.fetch).verifyOpenId(openid()));
+      expect(error.service).toBe("homeserver");
+      expect(error.message).not.toContain(ACCESS);
+      expect(error.cause).toBeUndefined();
     }
   });
 });
@@ -143,11 +157,10 @@ describe("calls: the tokenless delayed-event action (MSC4140)", () => {
   test("rate limited, failing or unreachable throws, without quoting the delay id", async () => {
     for (const answer of [{ status: 429 }, { status: 502 }, "throw" as const]) {
       const f = fakeFetch(() => answer);
-      const error = await hs(f.fetch)
-        .delayedEvent("syd_secret", "send")
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(CallUpstreamError);
-      expect(String(error)).not.toContain("syd_secret");
+      const error = await upstreamError(
+        hs(f.fetch).delayedEvent("syd_secret", "send"),
+      );
+      expect(error.message).not.toContain("syd_secret");
     }
   });
 });
@@ -175,17 +188,17 @@ describe("calls: the hub's membership check (C4)", () => {
       agentUserId: "@agent_x:s.example",
       stationId: "station_1",
     });
-    expect(f.seen).toEqual([
+    expect(
+      f.seen.map(({ url, method, body }) => ({ url, method, body })),
+    ).toEqual([
       {
         url: "https://hub.example/internal/superdial/membership",
         method: "POST",
-        headers: expect.objectContaining({
-          authorization: `Bearer ${TOKEN}`,
-          "content-type": "application/json",
-        }) as Record<string, string>,
         body: { user_id: "@u:s.example", room_id: "!r:s.example" },
       },
     ]);
+    expect(f.seen[0]?.headers.authorization).toBe(`Bearer ${TOKEN}`);
+    expect(f.seen[0]?.headers["content-type"]).toBe("application/json");
   });
 
   test("each refusal carries its reason", async () => {
@@ -218,12 +231,11 @@ describe("calls: the hub's membership check (C4)", () => {
       "throw" as const,
     ]) {
       const f = fakeFetch(() => answer);
-      const error = await hub(f.fetch)
-        .check("@u:s.example", "!r:s.example")
-        .catch((e: unknown) => e);
-      expect(error).toBeInstanceOf(CallUpstreamError);
-      expect((error as CallUpstreamError).service).toBe("hub");
-      expect(String(error)).not.toContain(TOKEN);
+      const error = await upstreamError(
+        hub(f.fetch).check("@u:s.example", "!r:s.example"),
+      );
+      expect(error.service).toBe("hub");
+      expect(error.message).not.toContain(TOKEN);
     }
   });
 });

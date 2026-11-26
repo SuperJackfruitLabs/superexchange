@@ -36,6 +36,15 @@ export function isDelayId(value: unknown): value is string {
   return typeof value === "string" && OPAQUE_ID.test(value);
 }
 
+/** A field of a JSON value, or undefined when it is not an object or lacks it. */
+export function fieldOf(value: unknown, key: string): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const found: unknown = Reflect.get(value, key);
+  return found;
+}
+
 /**
  * An upstream of the token service (the homeserver, the hub, LiveKit) could not give an answer.
  * Never carries the underlying error: a fetch error can quote its URL, and the OpenID check's URL

@@ -6,7 +6,7 @@
  * <SUPERDIAL_MEMBERSHIP_TOKEN>`, `{"user_id","room_id"}`. A hub that refuses the token, fails, or
  * answers anything but C4's two shapes is `CallUpstreamError("hub")`: never an answer.
  */
-import { CallUpstreamError } from "./naming.ts";
+import { CallUpstreamError, fieldOf } from "./naming.ts";
 
 export type Membership =
   | { allowed: true; agentUserId: string; stationId: string }
@@ -63,23 +63,22 @@ export function createMembershipCheck(
           "it refused SUPERDIAL_MEMBERSHIP_TOKEN",
         );
       }
-      if (status !== 200 || typeof json !== "object" || json === null) {
+      if (status !== 200) {
         throw new CallUpstreamError("hub", `membership ${status}`);
       }
-      const body = json as Record<string, unknown>;
+      const allowed = fieldOf(json, "allowed");
+      const agentUserId = fieldOf(json, "agent_user_id");
+      const stationId = fieldOf(json, "station_id");
+      const reason = fieldOf(json, "reason");
       if (
-        body.allowed === true &&
-        typeof body.agent_user_id === "string" &&
-        typeof body.station_id === "string"
+        allowed === true &&
+        typeof agentUserId === "string" &&
+        typeof stationId === "string"
       ) {
-        return {
-          allowed: true,
-          agentUserId: body.agent_user_id,
-          stationId: body.station_id,
-        };
+        return { allowed: true, agentUserId, stationId };
       }
-      if (body.allowed === false && typeof body.reason === "string") {
-        return { allowed: false, reason: body.reason };
+      if (allowed === false && typeof reason === "string") {
+        return { allowed: false, reason };
       }
       throw new CallUpstreamError("hub", "membership answer malformed");
     },

@@ -257,7 +257,7 @@ describe("calls: the delayed-leave loop", () => {
     });
     await after.leaves.tick();
     expect(after.presenceAsked.toSorted()).toEqual(["@u:s:DEV", "@v:s:D2"]);
-    expect(after.actions.toSorted()).toEqual([
+    expect(after.actions.toSorted((a, b) => a[0].localeCompare(b[0]))).toEqual([
       ["syd_2", "send"],
       ["syd_secret_1", "restart"],
     ]);
@@ -283,10 +283,7 @@ describe("calls: the delayed-leave loop", () => {
   });
 
   test("ticks never overlap", async () => {
-    let release = () => {};
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     let asked = 0;
     const slow = createDelayedLeaves({
       store: (() => {
@@ -313,22 +310,21 @@ describe("calls: the delayed-leave loop", () => {
 
   test("start ticks now and every 5 s, and stop ends it", async () => {
     const scheduled: number[] = [];
-    let next: (() => void) | null = null;
+    const runs: Array<() => void> = [];
     let cancelled = 0;
     const { leaves } = setup();
     leaves.start({
       schedule: (run, ms) => {
         scheduled.push(ms);
-        next = run;
-        return 1;
-      },
-      cancel: () => {
-        cancelled++;
+        runs.push(run);
+        return () => {
+          cancelled++;
+        };
       },
     });
     await Bun.sleep(0);
     expect(scheduled).toEqual([RESTART_INTERVAL_MS]);
-    (next as (() => void) | null)?.();
+    runs.at(-1)?.();
     await Bun.sleep(0);
     expect(scheduled).toEqual([RESTART_INTERVAL_MS, RESTART_INTERVAL_MS]);
     leaves.stop();

@@ -56,12 +56,23 @@ export interface DelayedLeaves {
   onEvent(event: LiveKitEvent): Promise<void>;
   /** One pass over every kept leave. A pass already running makes this a no-op. */
   tick(): Promise<void>;
-  /** Tick now, then every `RESTART_INTERVAL_MS`. */
+  /**
+   * Tick now, then every `RESTART_INTERVAL_MS`. `schedule` is the test seam: it runs `run` after
+   * `ms` and answers how to cancel that.
+   */
   start(options?: {
-    schedule?: (run: () => void, ms: number) => unknown;
-    cancel?: (handle: unknown) => void;
+    schedule?: (run: () => void, ms: number) => () => void;
   }): void;
   stop(): void;
+}
+
+const where = (leave: DelayedLeave) =>
+  `${leave.identity} in ${leave.livekitRoom}`;
+
+/** `setTimeout`, answering how to cancel it. */
+function later(run: () => void, ms: number): () => void {
+  const timer = setTimeout(run, ms);
+  return () => clearTimeout(timer);
 }
 
 export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
@@ -73,12 +84,7 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
   const leaving = new Set<string>();
   let running: Promise<void> | null = null;
   let stopped = false;
-  let handle: unknown = null;
-  let cancel: (handle: unknown) => void = (h) =>
-    clearTimeout(h as ReturnType<typeof setTimeout>);
-
-  const where = (leave: DelayedLeave) =>
-    `${leave.identity} in ${leave.livekitRoom}`;
+  let cancel: (() => void) | null = null;
 
   function forget(leave: DelayedLeave): void {
     deps.store.forgetDelayedLeave(
@@ -214,10 +220,7 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     },
 
     start(options = {}) {
-      const schedule =
-        options.schedule ??
-        ((run: () => void, ms: number) => setTimeout(run, ms));
-      if (options.cancel) cancel = options.cancel;
+      const schedule = options.schedule ?? later;
       stopped = false;
       const run = async () => {
         try {
@@ -227,15 +230,15 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
             "superdial: a delayed-leave pass failed; the next one runs on time",
           );
         }
-        if (!stopped) handle = schedule(() => void run(), RESTART_INTERVAL_MS);
+        if (!stopped) cancel = schedule(() => void run(), RESTART_INTERVAL_MS);
       };
       void run();
     },
 
     stop() {
       stopped = true;
-      if (handle !== null) cancel(handle);
-      handle = null;
+      cancel?.();
+      cancel = null;
     },
   };
   return leaves;

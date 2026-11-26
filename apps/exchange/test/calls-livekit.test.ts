@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
-import { AccessToken, TokenVerifier, TwirpError } from "livekit-server-sdk";
+import {
+  AccessToken,
+  ParticipantInfo,
+  TokenVerifier,
+  TwirpError,
+} from "livekit-server-sdk";
 import {
   CallUpstreamError,
   TOKEN_TTL_SECONDS,
@@ -94,13 +99,21 @@ describe("calls: the LiveKit adapter", () => {
       canSubscribe: true,
       canUpdateOwnMetadata: true,
     });
-    const { exp, nbf } = claims as { exp: number; nbf: number };
-    expect(exp - nbf).toBeLessThanOrEqual(TOKEN_TTL_SECONDS);
+    expect((claims.exp ?? Infinity) - (claims.nbf ?? 0)).toBeLessThanOrEqual(
+      TOKEN_TTL_SECONDS,
+    );
     expect(TOKEN_TTL_SECONDS).toBeLessThanOrEqual(600);
     // Signed with this key's secret, so another secret cannot read it as genuine.
-    await expect(
-      new TokenVerifier(KEY, "another-secret-0123456789abcdef").verify(jwt),
-    ).rejects.toThrow();
+    const forged = await new TokenVerifier(
+      KEY,
+      "another-secret-0123456789abcdef",
+    )
+      .verify(jwt)
+      .then(
+        () => "read",
+        () => "refused",
+      );
+    expect(forged).toBe("refused");
   });
 
   test("a webhook signed with the secret is read", async () => {
@@ -144,7 +157,7 @@ describe("calls: the LiveKit adapter", () => {
       rooms: {
         getParticipant: (room, identity) => {
           asked.push([room, identity]);
-          return Promise.resolve({ identity } as never);
+          return Promise.resolve(new ParticipantInfo({ identity }));
         },
       },
     });
@@ -177,6 +190,6 @@ describe("calls: the LiveKit adapter", () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CallUpstreamError);
     expect(String(error)).not.toContain(SECRET);
-    expect((error as Error).cause).toBeUndefined();
+    expect(error instanceof Error && error.cause).toBeUndefined();
   });
 });

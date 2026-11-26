@@ -11,7 +11,7 @@
  *
  * The access token and the delay id are secrets of their holders: neither reaches an error.
  */
-import { CallUpstreamError } from "./naming.ts";
+import { CallUpstreamError, fieldOf } from "./naming.ts";
 
 export interface CallHomeserverDeps {
   homeserverUrl: string;
@@ -72,9 +72,8 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
 
   return {
     async verifyOpenId(token) {
-      if (typeof token !== "object" || token === null) return null;
-      const { access_token: accessToken, matrix_server_name: server } =
-        token as Record<string, unknown>;
+      const accessToken = fieldOf(token, "access_token");
+      const server = fieldOf(token, "matrix_server_name");
       if (server !== deps.serverName) return null;
       if (typeof accessToken !== "string" || !ACCESS_TOKEN.test(accessToken)) {
         return null;
@@ -85,10 +84,7 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
       if (answer.status !== 200) {
         throw new CallUpstreamError("homeserver", `userinfo ${answer.status}`);
       }
-      const sub =
-        typeof answer.json === "object" && answer.json !== null
-          ? (answer.json as Record<string, unknown>).sub
-          : undefined;
+      const sub = fieldOf(answer.json, "sub");
       if (
         typeof sub !== "string" ||
         !sub.startsWith("@") ||
