@@ -16,20 +16,22 @@ export function livekitRoomName(roomId: string): string {
   return createHash("sha256").update(roomId, "utf8").digest("base64url");
 }
 
-/** A Matrix room id: `!`, an opaque part, `:`, a server name; at most 255 characters. */
+/**
+ * A Matrix room id: `!` and printable characters, with or without a server part (room version 12
+ * ids have none); at most 255 characters.
+ */
 export function isRoomId(value: unknown): value is string {
-  return (
-    typeof value === "string" &&
-    value.length <= 255 &&
-    /^![^\s:]+:\S+$/.test(value)
-  );
+  return typeof value === "string" && /^![\x21-\x7e]{1,254}$/.test(value);
 }
 
 /** One to 255 printable characters, no space: a device id or a delay id as a homeserver issues them. */
 const OPAQUE_ID = /^[\x21-\x7e]{1,255}$/;
 
+/** A device id, and no colon: the identity `{user_id}:{device_id}` is split at its last one. */
 export function isDeviceId(value: unknown): value is string {
-  return typeof value === "string" && OPAQUE_ID.test(value);
+  return (
+    typeof value === "string" && OPAQUE_ID.test(value) && !value.includes(":")
+  );
 }
 
 export function isDelayId(value: unknown): value is string {

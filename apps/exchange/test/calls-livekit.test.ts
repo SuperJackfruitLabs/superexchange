@@ -64,11 +64,13 @@ describe("calls: names (C5)", () => {
   test("ids are checked for their shape", () => {
     expect(isRoomId("!r:s")).toBe(true);
     expect(isRoomId("!r:s.example:8448")).toBe(true);
+    // Room version 12 ids have no server part (treaty: "with or without a server part").
+    expect(isRoomId("!31hneApxJ_1o-63DmFrpeqnkFfWppnzWso1JvH3ogLM")).toBe(true);
     for (const bad of [
       "r:s",
-      "!r",
-      "!:s",
+      "!",
       "! r:s",
+      "!r\n:s",
       "",
       7,
       null,
@@ -81,6 +83,8 @@ describe("calls: names (C5)", () => {
       expect(isDeviceId(bad)).toBe(false);
       expect(isDelayId(bad)).toBe(false);
     }
+    // The identity is {user_id}:{device_id}, split at its last colon (treaty's pattern).
+    expect(isDeviceId("A:B")).toBe(false);
   });
 });
 

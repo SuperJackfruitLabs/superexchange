@@ -6,10 +6,11 @@
  *   that user may call in that room (C4), and a LiveKit token is minted for identity
  *   `{user_id}:{device_id}` in room `base64url_nopad(sha256(room_id))`:
  *   `200 {url, jwt, identity, livekit_room}`. A hub refusal is
- *   `403 {"errcode":"M_FORBIDDEN","reason":<C4 reason>}`.
+ *   `403 {"errcode":"M_FORBIDDEN","error":"Calls are not available for this agent yet","reason":<C4 reason>}`
+ *   (treaty `schemas/http/superexchange/livekit-token.v1`).
  * - `POST /v1/delayed-leave` with `{room_id, device_id, delay_id, openid_token}`: the same two
- *   checks, and the device must be one the homeserver lists for that user; the delay is kept by
- *   the delayed-leave loop: `204`.
+ *   checks, and the device must be one the homeserver lists for that user (else 403 with reason
+ *   `not_your_device`, this service's own); the delay is kept by the delayed-leave loop: `204`.
  * - `POST /v1/livekit-webhook`: LiveKit's webhook, read only when signed with the API secret;
  *   `200`, or `401`.
  *
@@ -63,9 +64,12 @@ const matrixError = (
   error: string,
 ): Response => Response.json({ errcode, error }, { status });
 
-/** A refusal, by C5: 403 with the reason. */
-const forbidden = (reason: string): Response =>
-  Response.json({ errcode: "M_FORBIDDEN", reason }, { status: 403 });
+/** What a caller refused by the hub is told (the master plan's copy; treaty livekit-token.v1). */
+export const REFUSAL_COPY = "Calls are not available for this agent yet";
+
+/** A refusal, by C5: 403, matrix-error.v1 with the reason. */
+const forbidden = (reason: string, error = REFUSAL_COPY): Response =>
+  Response.json({ errcode: "M_FORBIDDEN", error, reason }, { status: 403 });
 
 /** A request's caller, or the answer that ends it. */
 type Caller =
@@ -124,8 +128,16 @@ export function createSuperdialHandler(
     if (!isDeviceId(deviceId)) {
       return { ok: false, response: invalid("device_id is not a device id") };
     }
-    if (typeof openid !== "object" || openid === null) {
-      return { ok: false, response: invalid("openid_token is not an object") };
+    if (
+      !nonEmpty(fieldOf(openid, "access_token")) ||
+      !nonEmpty(fieldOf(openid, "matrix_server_name"))
+    ) {
+      return {
+        ok: false,
+        response: invalid(
+          "openid_token is not the homeserver's OpenID token answer",
+        ),
+      };
     }
     let userId: string | null;
     try {
@@ -191,7 +203,7 @@ export function createSuperdialHandler(
     }
     if (!devices.includes(c.deviceId)) {
       log(`superdial: ${c.userId} named a device that is not theirs`);
-      return forbidden("not_your_device");
+      return forbidden("not_your_device", "The device is not the caller's");
     }
     const refused = await membership(c.userId, c.roomId);
     if (refused !== null) return refused;
@@ -238,6 +250,9 @@ export function createSuperdialHandler(
     return webhook(request);
   };
 }
+
+const nonEmpty = (value: unknown): boolean =>
+  typeof value === "string" && value !== "";
 
 const invalid = (error: string): Response =>
   matrixError(400, "M_INVALID_PARAM", error);

@@ -188,6 +188,23 @@ describe("POST /v1/token (C5)", () => {
     }
   });
 
+  test("the answer has treaty's shape, for a room id with or without a server part", async () => {
+    for (const roomId of [
+      ROOM,
+      "!31hneApxJ_1o-63DmFrpeqnkFfWppnzWso1JvH3ogLM",
+    ]) {
+      const s = setup();
+      const body = await json(
+        await s.handle(tokenRequest({ room_id: roomId })),
+      );
+      expect(body.url).toMatch(/^wss?:\/\//);
+      expect(body.identity).toMatch(/^@[^:]+:.+:[^:]+$/);
+      expect(body.livekit_room).toMatch(/^[A-Za-z0-9_-]{43}$/);
+      expect(body.livekit_room).toBe(livekitRoomName(roomId));
+      expect(s.checked).toEqual([["@p:s.example", roomId]]);
+    }
+  });
+
   test("a user id in the body is not believed", async () => {
     const s = setup();
     const response = await s.handle(
@@ -207,7 +224,12 @@ describe("POST /v1/token (C5)", () => {
       const s = setup({ membership: { allowed: false, reason } });
       const response = await s.handle(tokenRequest());
       expect(response.status).toBe(403);
-      expect(await response.json()).toEqual({ errcode: "M_FORBIDDEN", reason });
+      // treaty livekit-token.v1, 403: matrix-error.v1 with the plan's copy and C4's reason.
+      expect(await response.json()).toEqual({
+        errcode: "M_FORBIDDEN",
+        error: "Calls are not available for this agent yet",
+        reason,
+      });
     }
   });
 
@@ -242,6 +264,18 @@ describe("POST /v1/token (C5)", () => {
       [tokenRequest({ device_id: "" }), "M_INVALID_PARAM"],
       [tokenRequest({ device_id: "A B" }), "M_INVALID_PARAM"],
       [tokenRequest({ openid_token: undefined }), "M_INVALID_PARAM"],
+      // treaty livekit-token.v1's invalid requests.
+      [tokenRequest({ room_id: "call:example.org" }), "M_INVALID_PARAM"],
+      [
+        tokenRequest({
+          openid_token: { ...OPENID, matrix_server_name: undefined },
+        }),
+        "M_INVALID_PARAM",
+      ],
+      [
+        tokenRequest({ openid_token: { ...OPENID, access_token: "" } }),
+        "M_INVALID_PARAM",
+      ],
     ];
     for (const [request, errcode] of cases) {
       const s = setup();
@@ -300,6 +334,7 @@ describe("POST /v1/delayed-leave (C5)", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       errcode: "M_FORBIDDEN",
+      error: "The device is not the caller's",
       reason: "not_your_device",
     });
     expect(s.registered).toEqual([]);
@@ -311,6 +346,7 @@ describe("POST /v1/delayed-leave (C5)", () => {
     expect(response.status).toBe(403);
     expect(await response.json()).toEqual({
       errcode: "M_FORBIDDEN",
+      error: "Calls are not available for this agent yet",
       reason: "not_member",
     });
     expect(s.registered).toEqual([]);
