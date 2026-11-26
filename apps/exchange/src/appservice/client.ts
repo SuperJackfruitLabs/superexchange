@@ -4,7 +4,8 @@
  * assertion). What the board rooms need: `whoami`, registering a localpart with
  * `m.login.application_service` and naming it, logging it in for an encryption device, creating
  * a room, reading whether a room is encrypted, resolving an alias, inviting, reading who has
- * joined, and sending an event under a caller-chosen transaction id.
+ * joined, and sending an event under a caller-chosen transaction id. For superdial's token
+ * service: the devices a user has (`keys/query`).
  *
  * `fetch` is injected so tests run without a homeserver. An error names the endpoint, the status
  * and the Matrix `errcode`, never the token and never the body the homeserver sent.
@@ -70,6 +71,12 @@ export interface AppserviceClient {
   invite(asUser: string, roomId: string, userId: string): Promise<void>;
   /** The users who have joined a room, asked as `asUser` (who must be in it). */
   joinedMembers(asUser: string, roomId: string): Promise<string[]>;
+  /**
+   * The ids of the devices `userId` has published keys for (`POST /keys/query`), asked as the
+   * registration's own user (its `sender_localpart`, which always exists). Every device that can
+   * take part in an encrypted call has keys.
+   */
+  userDevices(userId: string): Promise<string[]>;
   /**
    * Send an event as `asUser` under transaction id `txnId`, answering its event id. The
    * homeserver answers a repeated transaction id with the first send's event id rather than
@@ -306,6 +313,17 @@ export function createClient(deps: ClientDeps): AppserviceClient {
       const joined = json.joined;
       return typeof joined === "object" && joined !== null
         ? Object.keys(joined)
+        : [];
+    },
+
+    async userDevices(userId) {
+      const json = await ok("keys/query", "/_matrix/client/v3/keys/query", {
+        method: "POST",
+        body: { device_keys: { [userId]: [] } },
+      });
+      const devices: unknown = Reflect.get(json.device_keys ?? {}, userId);
+      return typeof devices === "object" && devices !== null
+        ? Object.keys(devices)
         : [];
     },
 

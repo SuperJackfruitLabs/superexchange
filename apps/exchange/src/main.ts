@@ -6,7 +6,8 @@
  * gives back any answer a stopped run left unfinished, queues every card delivered but not yet
  * posted, tries again every encrypted event still waiting for its key, and starts the gate,
  * question, follow-up and waiting-card sweeps (once now, then every
- * `SUPEREXCHANGE_SWEEP_SECONDS`).
+ * `SUPEREXCHANGE_SWEEP_SECONDS`). When its settings are present, it also serves superdial's
+ * LiveKit token service and runs its delayed-leave loop, resuming the leaves it kept.
  */
 import { join } from "node:path";
 import {
@@ -43,6 +44,12 @@ import {
   startQuestionSweep,
   startSweeper,
 } from "./board-chat/index.ts";
+import {
+  createCallHomeserver,
+  createDelayedLeaves,
+  createLiveKit,
+  createMembershipCheck,
+} from "./calls/index.ts";
 import { loadConfig } from "./config.ts";
 import { SERVICE, createHandler } from "./routes/index.ts";
 import { openStore } from "./store/index.ts";
@@ -200,6 +207,33 @@ const approvalRequestAllowed = createApprovalScope({
 });
 const countEvents = countEventTypes(log);
 
+// superdial's token service (C5): only with its settings. It reaches the homeserver tokenless
+// (OpenID userinfo, the MSC4140 delayed-event action), and as this registration's own user only
+// to list a caller's devices.
+const calls = (() => {
+  if (config.superdial === null) return null;
+  const homeserver = createCallHomeserver({
+    homeserverUrl: config.homeserverUrl,
+    serverName: config.serverName,
+  });
+  const livekit = createLiveKit(config.superdial);
+  const leaves = createDelayedLeaves({ store, homeserver, livekit, log });
+  return {
+    leaves,
+    deps: {
+      homeserver,
+      hub: createMembershipCheck({
+        hubUrl: config.superdial.hubUrl,
+        token: config.superdial.membershipToken,
+      }),
+      livekit,
+      leaves,
+      userDevices: (userId: string) => client.userDevices(userId),
+      log,
+    },
+  };
+})();
+
 const server = Bun.serve({
   port: config.port,
   fetch: createHandler({
@@ -230,6 +264,7 @@ const server = Bun.serve({
     onAttentionAccepted: boardChat.attentionAccepted,
     onNoticeAccepted: boardChat.noticeAccepted,
     approvalRequestAllowed,
+    ...(calls ? { superdial: calls.deps } : {}),
     log,
   }),
 });
@@ -246,6 +281,10 @@ if (crypto) {
   );
 }
 boardChat.resume();
+if (calls) {
+  calls.leaves.start();
+  log(`${SERVICE}: the superdial token service is on`);
+}
 const sweep = startGateSweep(
   {
     store,
@@ -286,6 +325,7 @@ const noticeRetry = startSweeper(
 );
 
 async function shutdown() {
+  calls?.leaves.stop();
   noticeRetry.stop();
   sweep.stop();
   questionSweep.stop();
