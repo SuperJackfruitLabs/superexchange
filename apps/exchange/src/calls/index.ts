@@ -7,6 +7,8 @@
  * - `livekit.ts`: tokens, webhooks, presence.
  * - `homeserver.ts`: the OpenID check and the tokenless delayed-event action.
  * - `hub.ts`: the hub's membership check (C4).
+ * - `delayed-leaves.ts`: restarting a caller's delayed leave while LiveKit has it connected, and
+ *   sending it when it leaves.
  */
 export {
   CallUpstreamError,
@@ -35,3 +37,11 @@ export {
   type MembershipCheck,
   type MembershipCheckDeps,
 } from "./hub.ts";
+export {
+  CONNECT_GRACE_MS,
+  PRESENCE_RECHECK_MS,
+  RESTART_INTERVAL_MS,
+  createDelayedLeaves,
+  type DelayedLeaves,
+  type DelayedLeavesDeps,
+} from "./delayed-leaves.ts";
