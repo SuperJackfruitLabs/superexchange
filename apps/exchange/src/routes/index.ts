@@ -4,7 +4,9 @@
  * - `GET /healthz`: the health check;
  * - `/_matrix/app/v1/…`: the homeserver's transactions and queries (the appservice transport);
  * - `POST /v1/relay/events`: the event relay's signed deliveries (`relay.ts`);
- * - `/v1/boards…`: the operator's board opt-in API (`boards.ts`).
+ * - `/v1/boards…`: the operator's board opt-in API (`boards.ts`);
+ * - `POST /v1/token`, `/v1/delayed-leave`, `/v1/livekit-webhook`: superdial's token service
+ *   (`superdial.ts`), only when its settings are present.
  *
  * Anything else is 404.
  */
@@ -19,6 +21,11 @@ import type { Config } from "../config.ts";
 import type { Store, WaitKey } from "../store/index.ts";
 import { BOARDS_PATH, createBoardsHandler } from "./boards.ts";
 import { RELAY_EVENTS_PATH, createRelayHandler } from "./relay.ts";
+import {
+  SUPERDIAL_PATHS,
+  createSuperdialHandler,
+  type SuperdialDeps,
+} from "./superdial.ts";
 
 export const SERVICE = "superexchange";
 
@@ -41,6 +48,8 @@ export interface HandlerDeps {
   onAttentionAccepted?: (key: WaitKey) => void;
   /** Told of each board-room notice the relay accepted. */
   onNoticeAccepted?: (noticeId: string) => void;
+  /** superdial's token service; absent, its routes are 404. */
+  superdial?: SuperdialDeps;
   /** May an approval request on this board be kept? Absent: never. */
   approvalRequestAllowed?: ApprovalRequestAllowed;
   log?: (line: string) => void;
@@ -85,6 +94,10 @@ export function createHandler(deps: HandlerDeps) {
     log,
   });
 
+  const superdial = deps.superdial
+    ? createSuperdialHandler({ log, ...deps.superdial })
+    : null;
+
   return async (request: Request): Promise<Response> => {
     const { pathname } = new URL(request.url);
     if (pathname === "/healthz") {
@@ -96,6 +109,9 @@ export function createHandler(deps: HandlerDeps) {
     if (pathname.startsWith(APPSERVICE_PREFIX)) return appservice(request);
     if (pathname === RELAY_EVENTS_PATH) {
       return request.method === "POST" ? relay(request) : notFound();
+    }
+    if (SUPERDIAL_PATHS.includes(pathname)) {
+      return superdial ? superdial(request) : notFound();
     }
     if (pathname === BOARDS_PATH || pathname.startsWith(`${BOARDS_PATH}/`)) {
       return boards(request);
