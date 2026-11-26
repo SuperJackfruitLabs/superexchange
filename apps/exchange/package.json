@@ -11,6 +11,7 @@
   "dependencies": {
     "@matrix-org/matrix-sdk-crypto-nodejs": "0.6.6",
     "@superjackfruitlabs/treaty-cloudevents": "0.0.18",
-    "@superjackfruitlabs/treaty-matrix-events": "0.0.18"
+    "@superjackfruitlabs/treaty-matrix-events": "0.0.18",
+    "livekit-server-sdk": "2.19.3"
   }
 }

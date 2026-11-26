@@ -36,6 +36,24 @@ export const REQUIRED = [
   "SUPERPIPELINE_URL",
 ] as const;
 
+/**
+ * The superdial token service's settings (`calls/`, the C5 routes). All unset, the service is off
+ * and its routes are 404; some set, the service stops, naming the missing ones. `LIVEKIT_API_URL`
+ * is optional and turns nothing on by itself.
+ */
+export const SUPERDIAL_SETTINGS = [
+  /** The public `wss://` URL callers connect to LiveKit at; answered as `url` by `/v1/token`. */
+  "LIVEKIT_URL",
+  /** The LiveKit API key tokens are signed under, and webhooks are checked against. */
+  "LIVEKIT_API_KEY",
+  /** That key's secret. */
+  "LIVEKIT_API_SECRET",
+  /** Where the AgentPod hub answers its membership check (C4). */
+  "SUPERDIAL_HUB_URL",
+  /** The bearer the hub's membership check takes (`SUPERDIAL_MEMBERSHIP_TOKEN`). */
+  "SUPERDIAL_MEMBERSHIP_TOKEN",
+] as const;
+
 /** Where the store keeps its database when `SUPEREXCHANGE_DATA_DIR` is unset. */
 export const DEFAULT_DATA_DIR = "/data";
 
@@ -77,6 +95,25 @@ export interface Config {
   superpipelineUrl: string;
   /** How often the gate sweep asks each enabled board, in seconds (`SUPEREXCHANGE_SWEEP_SECONDS`). */
   sweepSeconds: number;
+  /** The superdial token service's settings; null when it is off. */
+  superdial: SuperdialConfig | null;
+}
+
+/** The superdial token service: LiveKit, and the hub's membership check. */
+export interface SuperdialConfig {
+  /** The public `ws(s)://` URL of LiveKit, given to callers. */
+  livekitUrl: string;
+  /**
+   * LiveKit's server API, http(s): `LIVEKIT_API_URL`, else `livekitUrl` with `wss` read as
+   * `https` and `ws` as `http`.
+   */
+  livekitApiUrl: string;
+  livekitApiKey: string;
+  livekitApiSecret: string;
+  /** The AgentPod hub's base URL, where `/internal/superdial/membership` answers. */
+  hubUrl: string;
+  /** The bearer for the hub's membership check. */
+  membershipToken: string;
 }
 
 /** A service principal's credential: its id and its secret. */
@@ -224,6 +261,8 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     }
   }
 
+  const superdial = readSuperdial(env, problems);
+
   if (problems.length > 0) throw new ConfigError(problems);
   return {
     port,
@@ -243,6 +282,58 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
     },
     superpipelineUrl,
     sweepSeconds,
+    superdial,
+  };
+}
+
+/** The superdial settings, null when none is set; problems are added to `problems`. */
+function readSuperdial(
+  env: Record<string, string | undefined>,
+  problems: string[],
+): SuperdialConfig | null {
+  const value = (name: string) => env[name]?.trim() ?? "";
+  const apiUrl = value("LIVEKIT_API_URL");
+  if (SUPERDIAL_SETTINGS.every((name) => value(name) === "") && apiUrl === "") {
+    return null;
+  }
+  for (const name of SUPERDIAL_SETTINGS) {
+    if (value(name) === "") {
+      problems.push(
+        `${name} is not set, and the superdial token service needs it`,
+      );
+    }
+  }
+  const livekitUrl = value("LIVEKIT_URL");
+  let derived = "";
+  if (livekitUrl !== "") {
+    try {
+      const u = new URL(livekitUrl);
+      if (
+        (u.protocol === "wss:" || u.protocol === "ws:") &&
+        u.hostname !== ""
+      ) {
+        u.protocol = u.protocol === "wss:" ? "https:" : "http:";
+        derived = u.toString().replace(/\/+$/, "");
+      }
+    } catch {
+      derived = "";
+    }
+    if (derived === "") problems.push("LIVEKIT_URL is not a ws(s) URL");
+  }
+  if (apiUrl !== "" && !isHttpUrl(apiUrl)) {
+    problems.push("LIVEKIT_API_URL is not an http(s) URL");
+  }
+  const hubUrl = value("SUPERDIAL_HUB_URL");
+  if (hubUrl !== "" && !isHttpUrl(hubUrl)) {
+    problems.push("SUPERDIAL_HUB_URL is not an http(s) URL");
+  }
+  return {
+    livekitUrl,
+    livekitApiUrl: apiUrl || derived,
+    livekitApiKey: value("LIVEKIT_API_KEY"),
+    livekitApiSecret: value("LIVEKIT_API_SECRET"),
+    hubUrl,
+    membershipToken: value("SUPERDIAL_MEMBERSHIP_TOKEN"),
   };
 }
 
