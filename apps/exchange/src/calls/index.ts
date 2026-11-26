@@ -5,6 +5,8 @@
  *
  * - `naming.ts`: the LiveKit identity and room name, id shapes, the upstream error.
  * - `livekit.ts`: tokens, webhooks, presence.
+ * - `homeserver.ts`: the OpenID check and the tokenless delayed-event action.
+ * - `hub.ts`: the hub's membership check (C4).
  */
 export {
   CallUpstreamError,
@@ -21,3 +23,15 @@ export {
   type LiveKitDeps,
   type LiveKitEvent,
 } from "./livekit.ts";
+export {
+  createCallHomeserver,
+  type CallHomeserver,
+  type CallHomeserverDeps,
+} from "./homeserver.ts";
+export {
+  MEMBERSHIP_PATH,
+  createMembershipCheck,
+  type Membership,
+  type MembershipCheck,
+  type MembershipCheckDeps,
+} from "./hub.ts";
