@@ -17,7 +17,7 @@ function fakeFetch(
   answer: (url: string) => { status: number; json?: unknown } | "throw",
 ) {
   const seen: Seen[] = [];
-  const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const fetch: typeof globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     seen.push({
       url,
@@ -30,7 +30,7 @@ function fakeFetch(
     return new Response(a.json === undefined ? "" : JSON.stringify(a.json), {
       status: a.status,
     });
-  }) as typeof fetch;
+  }) as typeof globalThis.fetch;
   return { fetch, seen };
 }
 
