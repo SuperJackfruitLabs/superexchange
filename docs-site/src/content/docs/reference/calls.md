@@ -71,7 +71,7 @@ For superdial's token service, without the appservice's token:
 | Request | For |
 | --- | --- |
 | `GET /_matrix/federation/v1/openid/userinfo?access_token=…` | Who a caller's OpenID token names; only for a token this homeserver issued |
-| `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}` `{"action":"restart"\|"send"}` | Keeping a caller's delayed leave alive, and sending it when the caller is gone |
+| `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}/restart` (or `/send`), no access token | Keeping a caller's delayed leave alive, and sending it when the caller is gone |
 
 and with it, as this registration's own user: `POST /_matrix/client/v3/keys/query`, the devices of
 a caller who hands over a delayed leave.

@@ -125,20 +125,23 @@ describe("calls: the homeserver's OpenID check", () => {
 });
 
 describe("calls: the tokenless delayed-event action (MSC4140)", () => {
-  test("restart and send, with no access token", async () => {
+  // tuwunel 2.0.0 takes the delay id as the authority only on the path form
+  // (`…/delayed_events/{id}/restart`); the body form (`{"action":…}`) needs an access token
+  // and answers 401 M_MISSING_TOKEN without one (seen on staging, 2026-11-26).
+  test("restart and send, on the path form, with no access token", async () => {
     const f = fakeFetch(() => ({ status: 200, json: {} }));
     expect(await hs(f.fetch).delayedEvent("syd_a/b", "restart")).toBe("ok");
     expect(await hs(f.fetch).delayedEvent("syd_a/b", "send")).toBe("ok");
     expect(f.seen.map((s) => [s.method, s.url, s.body])).toEqual([
       [
         "POST",
-        "https://matrix.s.example/_matrix/client/unstable/org.matrix.msc4140/delayed_events/syd_a%2Fb",
-        { action: "restart" },
+        "https://matrix.s.example/_matrix/client/unstable/org.matrix.msc4140/delayed_events/syd_a%2Fb/restart",
+        {},
       ],
       [
         "POST",
-        "https://matrix.s.example/_matrix/client/unstable/org.matrix.msc4140/delayed_events/syd_a%2Fb",
-        { action: "send" },
+        "https://matrix.s.example/_matrix/client/unstable/org.matrix.msc4140/delayed_events/syd_a%2Fb/send",
+        {},
       ],
     ]);
     for (const s of f.seen) {
@@ -148,14 +151,22 @@ describe("calls: the tokenless delayed-event action (MSC4140)", () => {
   });
 
   test("a delay the homeserver no longer has is gone", async () => {
-    for (const status of [400, 404]) {
+    for (const status of [400, 404, 409]) {
       const f = fakeFetch(() => ({ status, json: { errcode: "M_NOT_FOUND" } }));
       expect(await hs(f.fetch).delayedEvent("syd_1", "restart")).toBe("gone");
     }
   });
 
-  test("rate limited, failing or unreachable throws, without quoting the delay id", async () => {
-    for (const answer of [{ status: 429 }, { status: 502 }, "throw" as const]) {
+  test("refused, rate limited, failing or unreachable throws, without quoting the delay id", async () => {
+    // 401/403 say the homeserver will not take the call, not that the delay is gone: forgetting
+    // the leave there would silently turn off every restart and send.
+    for (const answer of [
+      { status: 401, json: { errcode: "M_MISSING_TOKEN" } },
+      { status: 403 },
+      { status: 429 },
+      { status: 502 },
+      "throw" as const,
+    ]) {
       const f = fakeFetch(() => answer);
       const error = await upstreamError(
         hs(f.fetch).delayedEvent("syd_secret", "send"),

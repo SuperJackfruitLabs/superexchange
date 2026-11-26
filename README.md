@@ -200,9 +200,8 @@ LiveKit token, and hands over its delayed leave so a client that dies still leav
 - `POST /v1/delayed-leave` with `{room_id, device_id, delay_id, openid_token}`: the same checks,
   and the device must be one the homeserver lists for that user (`keys/query`); `204`. While
   LiveKit has the identity in the room, the delay is restarted every 5 s
-  (`POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}`
-  `{"action":"restart"}`, with no access token: the service never acts as a user). It is sent
-  (`{"action":"send"}`) when LiveKit says the identity left or its connection aborted, when the
+  (`POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}/restart`, with no
+  access token: the service never acts as a user). It is sent (`…/{delay_id}/send`) when LiveKit says the identity left or its connection aborted, when the
   room finished, when the identity has not connected 30 s after it was handed over, or when a
   presence check (LiveKit's server API) finds it gone. The leaves are kept in the store, so a
   restart resumes them.

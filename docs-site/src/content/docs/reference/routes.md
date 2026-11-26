@@ -112,9 +112,9 @@ this registration's own user), else `403` with reason `not_your_device`. Then th
 by LiveKit room and identity (a new one replaces the old):
 
 - while LiveKit has the identity in the room, the delay is restarted every 5 s:
-  `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}`
-  `{"action":"restart"}`, with no access token;
-- it is sent (`{"action":"send"}`) and forgotten when LiveKit says the identity left
+  `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}/restart`, with no
+  access token (tuwunel 2.0.0 accepts the delay id as the authority only on this path form);
+- it is sent (`…/{delay_id}/send`) and forgotten when LiveKit says the identity left
   (`participant_left`) or its connection aborted, when the room finished, when the identity has
   not connected 30 s after it was handed over, or when a presence check finds it gone. Presence
   (LiveKit's server API) is asked every 5 s until it connects, on the first pass after the service

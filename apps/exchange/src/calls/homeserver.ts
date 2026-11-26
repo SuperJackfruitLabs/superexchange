@@ -6,8 +6,10 @@
  *   names. tuwunel answers it with federation off. Only a token issued by this homeserver
  *   (`matrix_server_name` equal to `MATRIX_SERVER_NAME`) is asked about, so a caller cannot point
  *   the check at another server, and only a user of this server is accepted back.
- * - `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}` with
- *   `{"action":"restart"|"send"}` and no access token: tuwunel takes the delay id as the authority.
+ * - `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}/restart` (or
+ *   `/send`) with `{}` and no access token: tuwunel takes the delay id as the authority on this
+ *   path form. The body form (`…/{delay_id}` with `{"action":…}`) needs an access token on
+ *   tuwunel 2.0.0, which answers it 401 `M_MISSING_TOKEN` without one.
  *
  * The access token and the delay id are secrets of their holders: neither reaches an error.
  */
@@ -97,20 +99,24 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
     },
 
     async delayedEvent(delayId, action) {
-      const url = `${base}/_matrix/client/unstable/org.matrix.msc4140/delayed_events/${encodeURIComponent(delayId)}`;
+      const url = `${base}/_matrix/client/unstable/org.matrix.msc4140/delayed_events/${encodeURIComponent(delayId)}/${action}`;
       const answer = await request(
         url,
         {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action }),
+          body: "{}",
         },
         `delayed event ${action}`,
       );
       if (answer.status >= 200 && answer.status < 300) return "ok";
+      // 404 (unknown), 409 (already sent or cancelled) and the like: the delay is gone. 401 and
+      // 403 are the homeserver refusing the call itself, which forgetting would hide.
       if (
         answer.status >= 400 &&
         answer.status < 500 &&
+        answer.status !== 401 &&
+        answer.status !== 403 &&
         answer.status !== 429
       ) {
         return "gone";
