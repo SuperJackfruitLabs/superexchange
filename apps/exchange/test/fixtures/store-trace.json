@@ -26,11 +26,13 @@
   "closeChecksWaiting",
   "countRepostAttempt",
   "cryptoDevice",
+  "delayedLeaves",
   "disableBoard",
   "dropNotice",
   "followupDelivery",
   "followupEvent",
   "forgetCryptoDevice",
+  "forgetDelayedLeave",
   "forgetEscalationInvite",
   "gateDelivery",
   "gateEvent",
@@ -38,6 +40,7 @@
   "invitesOwingReposts",
   "knownCardTitle",
   "listBoards",
+  "markDelayedLeaveConnected",
   "membersOf",
   "membershipOf",
   "moveAttentionEvent",
@@ -62,6 +65,7 @@
   "recordBoardRoom",
   "recordChecksWaitingPosted",
   "recordCryptoDevice",
+  "recordDelayedLeave",
   "recordFollowupDelivery",
   "recordFollowupPosted",
   "recordGateDelivery",
@@ -96,7 +100,7 @@
   "unpostedQuestions",
   "upsertBoard"
  ],
- "migrationsSha256": "c83126a73077aa047b512ce9fd5bd11f9ee6ab79359089eb2dc052a635fe2b76",
+ "migrationsSha256": "473a44cc6d046373e961e51194961e8d2047f030374a58574f5c5ff4305e6881",
  "schema": [
   {
    "type": "index",
@@ -186,6 +190,11 @@
   {
    "type": "index",
    "name": "sqlite_autoindex_crypto_devices_1",
+   "sql": null
+  },
+  {
+   "type": "index",
+   "name": "sqlite_autoindex_delayed_leaves_1",
    "sql": null
   },
   {
@@ -280,6 +289,11 @@
   },
   {
    "type": "table",
+   "name": "delayed_leaves",
+   "sql": "CREATE TABLE delayed_leaves (\n     livekit_room TEXT NOT NULL,\n     identity TEXT NOT NULL,\n     user_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     delay_id TEXT NOT NULL,\n     registered_at TEXT NOT NULL,\n     connected_at TEXT,\n     PRIMARY KEY (livekit_room, identity)\n   )"
+  },
+  {
+   "type": "table",
    "name": "escalation_invites",
    "sql": "CREATE TABLE escalation_invites (\n     board_id TEXT NOT NULL,\n     user_id TEXT NOT NULL,\n     room_id TEXT NOT NULL,\n     invited_at TEXT NOT NULL,\n     joined_at TEXT,\n     reposted_at TEXT,\n     repost_attempts INTEGER NOT NULL DEFAULT 0,\n     PRIMARY KEY (board_id, user_id)\n   )"
   },
@@ -337,7 +351,7 @@
  "calls": [
   [
    "schemaVersion",
-   9
+   10
   ],
   [
    "claimTransaction",
@@ -1973,8 +1987,97 @@
    ]
   ],
   [
+   "recordDelayedLeave",
+   {
+    "livekitRoom": "lk_1",
+    "identity": "@a:hs:DEV",
+    "userId": "@a:hs",
+    "roomId": "!r1:hs",
+    "delayId": "syd_1",
+    "registeredAt": "2026-01-01T00:01:56.000Z",
+    "connectedAt": null
+   }
+  ],
+  [
+   "recordDelayedLeave",
+   {
+    "livekitRoom": "lk_1",
+    "identity": "@b:hs:DEV",
+    "userId": "@b:hs",
+    "roomId": "!r1:hs",
+    "delayId": "syd_1",
+    "registeredAt": "2026-01-01T00:01:57.000Z",
+    "connectedAt": null
+   }
+  ],
+  [
+   "markDelayedLeaveConnected",
+   true
+  ],
+  [
+   "markDelayedLeaveConnected",
+   false
+  ],
+  [
+   "recordDelayedLeave",
+   {
+    "livekitRoom": "lk_1",
+    "identity": "@a:hs:DEV",
+    "userId": "@a:hs",
+    "roomId": "!r1:hs",
+    "delayId": "syd_2",
+    "registeredAt": "2026-01-01T00:02:00.000Z",
+    "connectedAt": null
+   }
+  ],
+  [
+   "delayedLeaves",
+   [
+    {
+     "livekitRoom": "lk_1",
+     "identity": "@b:hs:DEV",
+     "userId": "@b:hs",
+     "roomId": "!r1:hs",
+     "delayId": "syd_1",
+     "registeredAt": "2026-01-01T00:01:57.000Z",
+     "connectedAt": null
+    },
+    {
+     "livekitRoom": "lk_1",
+     "identity": "@a:hs:DEV",
+     "userId": "@a:hs",
+     "roomId": "!r1:hs",
+     "delayId": "syd_2",
+     "registeredAt": "2026-01-01T00:02:00.000Z",
+     "connectedAt": null
+    }
+   ]
+  ],
+  [
+   "forgetDelayedLeave",
+   false
+  ],
+  [
+   "forgetDelayedLeave",
+   true
+  ],
+  [
+   "delayedLeaves",
+   [
+    {
+     "livekitRoom": "lk_1",
+     "identity": "@a:hs:DEV",
+     "userId": "@a:hs",
+     "roomId": "!r1:hs",
+     "delayId": "syd_2",
+     "registeredAt": "2026-01-01T00:02:00.000Z",
+     "connectedAt": null
+    }
+   ]
+  ],
+  [
    "schemaVersion",
-   9
+   10
   ]
  ],
  "rows": {
@@ -2098,6 +2201,17 @@
     "user_id": "@bot:hs",
     "device_id": "DEV3",
     "created_at": "2026-01-01T00:01:51.000Z"
+   }
+  ],
+  "delayed_leaves": [
+   {
+    "livekit_room": "lk_1",
+    "identity": "@a:hs:DEV",
+    "user_id": "@a:hs",
+    "room_id": "!r1:hs",
+    "delay_id": "syd_2",
+    "registered_at": "2026-01-01T00:02:00.000Z",
+    "connected_at": null
    }
   ],
   "escalation_invites": [

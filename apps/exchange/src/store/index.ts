@@ -8,7 +8,8 @@
  * relay delivered and the ones posted (with what they offered, and whether their receipt has been
  * claimed), the delivery follow-ups and waiting cards likewise, the board-room notices (reminders,
  * escalations and whom they invited, quorum progress, held approvals, checks) and the checks.waiting
- * cards, the speaker's encryption device, and encrypted events still waiting for their key.
+ * cards, the speaker's encryption device, encrypted events still waiting for their key, and call
+ * clients' delayed leaves (superdial).
  *
  * The lowest layer beside config: it knows tables, not Matrix and not boards' rules. Its schema
  * is a list of migrations applied in order at boot and recorded in `PRAGMA user_version`; a
@@ -16,7 +17,7 @@
  *
  * `migrations.ts` holds the schema and `model.ts` the shapes and the `Store` interface. Each table
  * group's reads and writes are a module of their own (boards, rooms, gates, questions, follow-ups,
- * attention, notices, checks, crypto), given the one database and clock; `openStore` composes
+ * attention, notices, checks, crypto, calls), given the one database and clock; `openStore` composes
  * them. Callers import from this file only.
  */
 import { Database } from "bun:sqlite";
@@ -24,6 +25,7 @@ import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { attentionQueries } from "./attention.ts";
 import { boardsQueries } from "./boards.ts";
+import { callsQueries } from "./calls.ts";
 import { checksQueries } from "./checks.ts";
 import { cryptoQueries } from "./crypto.ts";
 import { followupsQueries } from "./followups.ts";
@@ -63,6 +65,7 @@ export {
   type Notice,
   type EscalationInvite,
   type ChecksWaiting,
+  type DelayedLeave,
   type Store,
 } from "./model.ts";
 
@@ -112,6 +115,7 @@ export function openStore(
     ...noticesQueries(db, stamp),
     ...checksQueries(db, stamp),
     ...cryptoQueries(db, stamp),
+    ...callsQueries(db, stamp),
     close: () => db.close(),
   };
 }

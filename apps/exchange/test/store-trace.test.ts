@@ -468,6 +468,35 @@ function run(store: Store): Array<[string, unknown]> {
   rec("claimPendingDecrypt", s.claimPendingDecrypt("$e2"));
   rec("claimPendingDecrypt", s.claimPendingDecrypt("$e2"));
   rec("pendingDecrypts", s.pendingDecrypts());
+
+  const leave = {
+    livekitRoom: "lk_1",
+    identity: "@a:hs:DEV",
+    userId: "@a:hs",
+    roomId: "!r1:hs",
+    delayId: "syd_1",
+  };
+  rec("recordDelayedLeave", s.recordDelayedLeave(leave));
+  rec(
+    "recordDelayedLeave",
+    s.recordDelayedLeave({ ...leave, identity: "@b:hs:DEV", userId: "@b:hs" }),
+  );
+  rec(
+    "markDelayedLeaveConnected",
+    s.markDelayedLeaveConnected("lk_1", "@a:hs:DEV", "syd_1"),
+  );
+  rec(
+    "markDelayedLeaveConnected",
+    s.markDelayedLeaveConnected("lk_1", "@a:hs:DEV", "syd_none"),
+  );
+  rec(
+    "recordDelayedLeave",
+    s.recordDelayedLeave({ ...leave, delayId: "syd_2" }),
+  );
+  rec("delayedLeaves", s.delayedLeaves());
+  rec("forgetDelayedLeave", s.forgetDelayedLeave("lk_1", "@a:hs:DEV", "syd_1"));
+  rec("forgetDelayedLeave", s.forgetDelayedLeave("lk_1", "@b:hs:DEV", "syd_1"));
+  rec("delayedLeaves", s.delayedLeaves());
   rec("schemaVersion", s.schemaVersion());
   return calls;
 }
