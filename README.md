@@ -184,6 +184,40 @@ an encrypted room never gets plaintext, and a room made in plaintext (staging, b
 is left as it is. With the switch off nothing is posted into such a room, encrypted or not; that
 board's chat comes back when it is re-opted in for a new room (not built yet).
 
+**Calls (superdial): the LiveKit token service.** Off unless its five settings are present. A
+caller (superdial, in SuperMessage or superdial-agent) trades its Matrix OpenID token for a
+LiveKit token, and hands over its delayed leave so a client that dies still leaves the call
+(contract C5; treaty `schemas/http/superexchange/livekit-token.v1`):
+
+- `POST /v1/token` with `{room_id, device_id, openid_token}`. The OpenID token is checked with
+  the homeserver's `GET /_matrix/federation/v1/openid/userinfo` (only a token this homeserver
+  issued, naming one of its users), then the AgentPod hub is asked whether that user may call in
+  that room (`POST {SUPERDIAL_HUB_URL}/internal/superdial/membership`, C4). Allowed:
+  `200 {url, jwt, identity, livekit_room}`, a LiveKit token (`livekit-server-sdk`) for identity
+  `{user_id}:{device_id}` in room `base64url_nopad(sha256(room_id))` only, to publish, subscribe
+  and set its own attributes, for 600 s. Refused:
+  `403 {"errcode":"M_FORBIDDEN","error":"Calls are not available for this agent yet","reason":<C4 reason>}`.
+- `POST /v1/delayed-leave` with `{room_id, device_id, delay_id, openid_token}`: the same checks,
+  and the device must be one the homeserver lists for that user (`keys/query`); `204`. While
+  LiveKit has the identity in the room, the delay is restarted every 5 s
+  (`POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}`
+  `{"action":"restart"}`, with no access token: the service never acts as a user). It is sent
+  (`{"action":"send"}`) when LiveKit says the identity left or its connection aborted, when the
+  room finished, when the identity has not connected 30 s after it was handed over, or when a
+  presence check (LiveKit's server API) finds it gone. The leaves are kept in the store, so a
+  restart resumes them.
+- `POST /v1/livekit-webhook`: LiveKit's webhook, read only when signed with the API key's
+  secret; it drives the loop above.
+
+Other answers are this service's own: `400` for a body that is not a request, `401` for an
+OpenID token the homeserver does not accept, `413`, and `503` when the homeserver, the hub or
+LiveKit cannot answer. **Supported homeserver: tuwunel 2.0.0** (its tokenless MSC4140 action
+route and its OpenID userinfo with federation off are what the token service relies on).
+
+Only `/v1/token` and `/v1/delayed-leave` belong under the public name the homeserver serves as
+`livekit_url`; LiveKit reaches `/v1/livekit-webhook` on the host or its network. Nothing else
+under `/v1/` or `/_matrix/app/` is for the public internet.
+
 | Route                                                | Who calls it   | What it does                                                                                                                           |
 | ---------------------------------------------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /healthz`                                       | anyone         | The health check                                                                                                                       |
@@ -192,6 +226,9 @@ board's chat comes back when it is re-opted in for a new room (not built yet).
 | `GET /_matrix/app/v1/users/…`, `rooms/…`             | the homeserver | `M_NOT_FOUND` until rooms move here                                                                                                    |
 | `POST /v1/relay/events`                              | the relay      | A signed `gate.pending`, `elicitation.pending`, `delivery.pending`, `attention.pending` or board-room notice, kept for opted-in boards |
 | `GET /v1/boards`, `PUT`/`DELETE /v1/boards/:boardId` | the operator   | Opt a board in, disable it, list them                                                                                                  |
+| `POST /v1/token`                                     | a call client  | A LiveKit token for a call the hub allows (superdial)                                                                                  |
+| `POST /v1/delayed-leave`                             | a call client  | Its delayed leave, restarted while it is connected and sent when it leaves                                                             |
+| `POST /v1/livekit-webhook`                           | LiveKit        | Signed participant and room events that drive the delayed leaves                                                                       |
 
 ## Run it
 
@@ -210,24 +247,31 @@ bun apps/exchange/src/main.ts
 curl http://127.0.0.1:8080/healthz
 ```
 
-| Setting                               | What it is                                                                                                                                                                  |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `MATRIX_HOMESERVER_URL`               | Where the homeserver's client-server API answers                                                                                                                            |
-| `MATRIX_SERVER_NAME`                  | The homeserver's server name                                                                                                                                                |
-| `MATRIX_AS_TOKEN`                     | The `as_token` of this appservice's registration                                                                                                                            |
-| `MATRIX_HS_TOKEN`                     | The `hs_token` of this appservice's registration                                                                                                                            |
-| `TREATY_RELAY_DELIVERY_SECRET`        | The secret the event relay signs its deliveries to this service                                                                                                             |
-| `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256` | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards`                                                                                                 |
-| `SUPEREXCHANGE_DATA_DIR`              | The directory the store's database lives in; `/data` when unset                                                                                                             |
-| `PORT`                                | Where it listens; 8080 when unset                                                                                                                                           |
-| `SUPEREXCHANGE_PLAINTEXT_ROOMS`       | `on` or `off` (default). Staging only: see Status                                                                                                                           |
-| `SUPEREXCHANGE_CRYPTO_PASSPHRASE`     | At least 32 characters; encrypts the speaker's crypto store. Required while plaintext rooms are off; unset, nothing is encrypted                                            |
-| `ORG_PLANE_URL`                       | Where the organization plane (Accounts) answers                                                                                                                             |
-| `ORG_PLANE_SERVICE_CREDENTIAL`        | This service's credential there, `svc_<20 hex>:<secret>`                                                                                                                    |
-| `SUPERPIPELINE_URL`                   | SuperPipeline's API, where gates are resolved and read; also the assertion and service-token audience                                                                       |
-| `SUPEREXCHANGE_SWEEP_SECONDS`         | How often the gate, question, follow-up and waiting-card sweeps ask each enabled board, and unposted notices are tried again: whole seconds from 15 to 86400; 60 when unset |
+| Setting                                 | What it is                                                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MATRIX_HOMESERVER_URL`                 | Where the homeserver's client-server API answers                                                                                                                            |
+| `MATRIX_SERVER_NAME`                    | The homeserver's server name                                                                                                                                                |
+| `MATRIX_AS_TOKEN`                       | The `as_token` of this appservice's registration                                                                                                                            |
+| `MATRIX_HS_TOKEN`                       | The `hs_token` of this appservice's registration                                                                                                                            |
+| `TREATY_RELAY_DELIVERY_SECRET`          | The secret the event relay signs its deliveries to this service                                                                                                             |
+| `SUPEREXCHANGE_OPERATOR_TOKEN_SHA256`   | The SHA-256 (64 hex digits) of the operator's bearer token for `/v1/boards`                                                                                                 |
+| `SUPEREXCHANGE_DATA_DIR`                | The directory the store's database lives in; `/data` when unset                                                                                                             |
+| `PORT`                                  | Where it listens; 8080 when unset                                                                                                                                           |
+| `SUPEREXCHANGE_PLAINTEXT_ROOMS`         | `on` or `off` (default). Staging only: see Status                                                                                                                           |
+| `SUPEREXCHANGE_CRYPTO_PASSPHRASE`       | At least 32 characters; encrypts the speaker's crypto store. Required while plaintext rooms are off; unset, nothing is encrypted                                            |
+| `ORG_PLANE_URL`                         | Where the organization plane (Accounts) answers                                                                                                                             |
+| `ORG_PLANE_SERVICE_CREDENTIAL`          | This service's credential there, `svc_<20 hex>:<secret>`                                                                                                                    |
+| `SUPERPIPELINE_URL`                     | SuperPipeline's API, where gates are resolved and read; also the assertion and service-token audience                                                                       |
+| `SUPEREXCHANGE_SWEEP_SECONDS`           | How often the gate, question, follow-up and waiting-card sweeps ask each enabled board, and unposted notices are tried again: whole seconds from 15 to 86400; 60 when unset |
+| `LIVEKIT_URL`                           | superdial: LiveKit's public `ws(s)://` URL, given to callers                                                                                                                |
+| `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | superdial: the LiveKit API key tokens are signed with and webhooks are checked against                                                                                      |
+| `LIVEKIT_API_URL`                       | superdial, optional: LiveKit's server API, http(s); `LIVEKIT_URL` with `wss` read as `https` when unset                                                                     |
+| `SUPERDIAL_HUB_URL`                     | superdial: the AgentPod hub, where its membership check answers                                                                                                             |
+| `SUPERDIAL_MEMBERSHIP_TOKEN`            | superdial: the bearer for that check                                                                                                                                        |
 
 A missing or malformed setting stops it before it listens, naming the setting, never its value.
+The five superdial settings go together: none set, the token service is off; some set, it stops
+and names the missing ones.
 
 ## Production
 

@@ -65,3 +65,25 @@ As the appservice, with `MATRIX_AS_TOKEN`, through the client-server API: regist
 speaker, the appservice login that gives the speaker its device, creating rooms, resolving an alias,
 reading a room's encryption state and joined members, inviting, sending (encrypted or not), and the
 encryption machinery's own requests (keys upload, query and claim, to-device messages).
+
+For superdial's token service, without the appservice's token:
+
+| Request | For |
+| --- | --- |
+| `GET /_matrix/federation/v1/openid/userinfo?access_token=…` | Who a caller's OpenID token names; only for a token this homeserver issued |
+| `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}` `{"action":"restart"\|"send"}` | Keeping a caller's delayed leave alive, and sending it when the caller is gone |
+
+and with it, as this registration's own user: `POST /_matrix/client/v3/keys/query`, the devices of
+a caller who hands over a delayed leave.
+
+## The AgentPod hub (`SUPERDIAL_HUB_URL`)
+
+| Request | Credential | For |
+| --- | --- | --- |
+| `POST /internal/superdial/membership` `{"user_id", "room_id"}` | `SUPERDIAL_MEMBERSHIP_TOKEN` | May this person call in this room (contract C4)? A refused token, a failure or a malformed answer is never read as an answer |
+
+## LiveKit (`LIVEKIT_API_URL`)
+
+| Request | Credential | For |
+| --- | --- | --- |
+| `RoomService/GetParticipant` | a token signed with `LIVEKIT_API_KEY` | Is a caller with a delayed leave in its room now? |

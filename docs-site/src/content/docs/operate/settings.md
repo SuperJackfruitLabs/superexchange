@@ -31,6 +31,21 @@ is listed at once, so one repair pass can clear the whole set.
 | `SUPEREXCHANGE_SWEEP_SECONDS` | `60` | How often the gate, question, follow-up and waiting-card sweeps ask each enabled board, and unposted notices are tried again. Whole seconds from 15 to 86400 |
 | `SUPEREXCHANGE_PLAINTEXT_ROOMS` | `off` | `on` makes new rooms without end-to-end encryption. Refused unless `MATRIX_SERVER_NAME` starts with `staging-`. With it on, the crypto passphrase may be unset, and then nothing is encrypted or decrypted |
 
+## superdial's token service
+
+Off unless set. The five below go together: none set, the token service is off and its routes
+are 404; some set, the service stops and names the missing ones. The homeserver is the one in
+`MATRIX_HOMESERVER_URL` and `MATRIX_SERVER_NAME`. See [HTTP routes](/reference/routes/#superdials-token-service).
+
+| Setting | What it is | Checked |
+| --- | --- | --- |
+| `LIVEKIT_URL` | LiveKit's public URL, given to callers as `url` | A ws(s) URL |
+| `LIVEKIT_API_KEY` | The LiveKit API key tokens are signed under and webhooks are checked against | Set |
+| `LIVEKIT_API_SECRET` | That key's secret | Set |
+| `SUPERDIAL_HUB_URL` | The AgentPod hub, where `POST /internal/superdial/membership` answers | An http(s) URL |
+| `SUPERDIAL_MEMBERSHIP_TOKEN` | The bearer that check takes; sent only to the hub, never logged | Set |
+| `LIVEKIT_API_URL` (optional) | LiveKit's server API, for presence checks. Unset: `LIVEKIT_URL` with `wss` read as `https` (`ws` as `http`) | An http(s) URL |
+
 ## Making the operator token
 
 The service holds only the hash. Make a token, keep it where operators keep secrets, and give the
