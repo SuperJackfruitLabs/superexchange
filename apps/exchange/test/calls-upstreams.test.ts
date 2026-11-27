@@ -4,6 +4,7 @@ import {
   createCallHomeserver,
   createMembershipCheck,
 } from "../src/calls/index.ts";
+import { MEMBERSHIP_TIMEOUT_MS } from "../src/calls/hub.ts";
 
 interface Seen {
   url: string;
@@ -176,6 +177,31 @@ describe("calls: the tokenless delayed-event action (MSC4140)", () => {
   });
 });
 
+/** Answers in turn; `"hang"` never answers, so only the attempt's timeout ends it. */
+function sequence(
+  answers: Array<{ status: number; json?: unknown } | "hang" | "throw">,
+) {
+  let n = 0;
+  const impl = async (_input: string | URL | Request, init?: RequestInit) => {
+    const a = answers[n++] ?? answers.at(-1);
+    if (a === "throw") throw new Error("connect failed");
+    if (a === "hang" || a === undefined) {
+      return await new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () =>
+          reject(init.signal?.reason),
+        );
+      });
+    }
+    return new Response(a.json === undefined ? "" : JSON.stringify(a.json), {
+      status: a.status,
+    });
+  };
+  const fetch: typeof globalThis.fetch = Object.assign(impl, {
+    preconnect: () => {},
+  });
+  return { fetch, attempts: () => n };
+}
+
 describe("calls: the hub's membership check (C4)", () => {
   const TOKEN = "membership-token-for-tests";
   const hub = (fetch: typeof globalThis.fetch) =>
@@ -183,6 +209,13 @@ describe("calls: the hub's membership check (C4)", () => {
       hubUrl: "https://hub.example/",
       token: TOKEN,
       fetch,
+    });
+  const quickHub = (fetch: typeof globalThis.fetch) =>
+    createMembershipCheck({
+      hubUrl: "https://hub.example",
+      token: TOKEN,
+      fetch,
+      timeoutMs: 20,
     });
 
   test("posts the user and room with the bearer, and reads an allowed answer", async () => {
@@ -228,6 +261,72 @@ describe("calls: the hub's membership check (C4)", () => {
         reason,
       });
     }
+  });
+
+  /**
+   * A slow hub is not a refusal. E1 (2026-11-27): the hub took 5 s over its first, cold C4
+   * answer, the old 5 s timeout gave up, and the caller's `/v1/token` was a 503. Each attempt now
+   * waits 15 s, and one that times out or fails 5xx is tried once more.
+   */
+  describe("a slow or failing hub is asked twice", () => {
+    const ALLOWED = {
+      status: 200,
+      json: {
+        allowed: true,
+        agent_user_id: "@agent_x:s.example",
+        station_id: "station_1",
+      },
+    };
+
+    test("each attempt waits 15 s by default", () => {
+      expect(MEMBERSHIP_TIMEOUT_MS).toBe(15_000);
+    });
+
+    test("an attempt that times out is retried once, and the second answer is the answer", async () => {
+      const f = sequence(["hang", ALLOWED]);
+      expect(
+        (await quickHub(f.fetch).check("@u:s.example", "!r:s.example")).allowed,
+      ).toBe(true);
+      expect(f.attempts()).toBe(2);
+    });
+
+    test("a 5xx is retried once", async () => {
+      const f = sequence([{ status: 502 }, ALLOWED]);
+      expect(
+        (await quickHub(f.fetch).check("@u:s.example", "!r:s.example")).allowed,
+      ).toBe(true);
+      expect(f.attempts()).toBe(2);
+    });
+
+    test("two failed attempts are still a hub error (503 at /v1/token), and there is no third", async () => {
+      for (const answers of [
+        ["hang", "hang"],
+        [{ status: 500 }, { status: 503 }],
+        ["hang", { status: 500 }],
+      ] as const) {
+        const f = sequence([...answers]);
+        const error = await upstreamError(
+          quickHub(f.fetch).check("@u:s.example", "!r:s.example"),
+        );
+        expect(error.service).toBe("hub");
+        expect(f.attempts()).toBe(2);
+      }
+    });
+
+    test("a refused token, a 4xx, an unreachable hub or a malformed answer is not retried", async () => {
+      for (const answer of [
+        { status: 401 },
+        { status: 404 },
+        { status: 200, json: { allowed: "yes" } },
+        "throw" as const,
+      ]) {
+        const f = sequence([answer, ALLOWED]);
+        await upstreamError(
+          quickHub(f.fetch).check("@u:s.example", "!r:s.example"),
+        );
+        expect(f.attempts()).toBe(1);
+      }
+    });
   });
 
   test("a hub that refuses the token, fails, is unreachable or answers nonsense is never an answer", async () => {

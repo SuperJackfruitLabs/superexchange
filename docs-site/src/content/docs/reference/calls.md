@@ -80,7 +80,7 @@ a caller who hands over a delayed leave.
 
 | Request | Credential | For |
 | --- | --- | --- |
-| `POST /internal/superdial/membership` `{"user_id", "room_id"}` | `SUPERDIAL_MEMBERSHIP_TOKEN` | May this person call in this room (contract C4)? A refused token, a failure or a malformed answer is never read as an answer |
+| `POST /internal/superdial/membership` `{"user_id", "room_id"}` | `SUPERDIAL_MEMBERSHIP_TOKEN` | May this person call in this room (contract C4)? A refused token, a failure or a malformed answer is never read as an answer. Each attempt waits 15 s; one that times out or answers 5xx is tried once more, and only two failures make `/v1/token` answer 503 |
 
 ## LiveKit (`LIVEKIT_API_URL`)
 
