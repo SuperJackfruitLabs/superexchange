@@ -5,6 +5,8 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+## v0.0.7 — 2026-11-27
+
 - superdial's LiveKit token service (contract C5), off unless `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
   `LIVEKIT_API_SECRET`, `SUPERDIAL_HUB_URL` and `SUPERDIAL_MEMBERSHIP_TOKEN` are set.
   `POST /v1/token` trades a Matrix OpenID token for a LiveKit token once the AgentPod hub's
