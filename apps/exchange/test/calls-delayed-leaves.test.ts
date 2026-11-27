@@ -531,6 +531,23 @@ describe("calls: the delayed-leave loop", () => {
     expect(presenceAsked).toHaveLength(5 + EVENT_IDS_KEPT);
   });
 
+  test("a leave that replaces another drops what was held for the old delay", async () => {
+    let failSend = true;
+    const { leaves } = setup({
+      present: () => false,
+      action: (_id, action) => (action === "send" && failSend ? "throw" : "ok"),
+    });
+    await leaves.register(LEAVE);
+    await leaves.onEvent(sessionEvent("participant_joined", "PA_A"));
+    // Joined (presence time, session) and a send that failed (kept to send again).
+    await leaves.onEvent(sessionEvent("participant_left", "PA_A"));
+    expect(leaves.heldInMemory()).toBe(1);
+    failSend = false;
+    // The client hands over a new delay for the same room and identity.
+    await leaves.register({ ...LEAVE, delayId: "syd_new" });
+    expect(leaves.heldInMemory()).toBe(0);
+  });
+
   test("an event for an identity it does not keep changes nothing", async () => {
     const { store, leaves, actions } = setup();
     await leaves.register(LEAVE);

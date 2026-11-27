@@ -88,6 +88,8 @@ export interface DelayedLeaves {
     schedule?: (run: () => void, ms: number) => () => void;
   }): void;
   stop(): void;
+  /** Test seam: how many delay ids the loop holds state for in memory. */
+  heldInMemory(): number;
 }
 
 const where = (leave: DelayedLeave) =>
@@ -137,15 +139,20 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     return true;
   }
 
+  /** Drop what this service holds in memory for a delay. */
+  function drop(delayId: string): void {
+    checkedAt.delete(delayId);
+    leaving.delete(delayId);
+    sessions.delete(delayId);
+  }
+
   function forget(leave: DelayedLeave): void {
     deps.store.forgetDelayedLeave(
       leave.livekitRoom,
       leave.identity,
       leave.delayId,
     );
-    checkedAt.delete(leave.delayId);
-    leaving.delete(leave.delayId);
-    sessions.delete(leave.delayId);
+    drop(leave.delayId);
   }
 
   /** Is it in the room? null when LiveKit cannot say. */
@@ -313,9 +320,17 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     register(input) {
       // Not connected until LiveKit says so: a client that connected before it handed its delay
       // over gets no webhook after, so the next tick asks LiveKit.
+      // A new delay replaces the old one for this room and identity: nothing of the old is kept.
+      for (const old of deps.store.delayedLeaves()) {
+        if (
+          old.livekitRoom === input.livekitRoom &&
+          old.identity === input.identity
+        ) {
+          drop(old.delayId);
+        }
+      }
       const leave = deps.store.recordDelayedLeave(input);
-      checkedAt.delete(leave.delayId);
-      leaving.delete(leave.delayId);
+      drop(leave.delayId);
       return Promise.resolve();
     },
 
@@ -360,6 +375,11 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
       stopped = true;
       cancel?.();
       cancel = null;
+    },
+
+    heldInMemory() {
+      return new Set([...checkedAt.keys(), ...leaving, ...sessions.keys()])
+        .size;
     },
   };
   return leaves;
