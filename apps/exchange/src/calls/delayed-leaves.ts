@@ -9,8 +9,13 @@
  * nothing (not its presence check, not another leave), and gives up before the next is due, so one
  * failed restart still leaves the next inside the 8 s. It sends the delay:
  *
- * - on `participant_left` or `participant_connection_aborted` for that identity, or
- *   `room_finished` for its room;
+ * - on `participant_left` or `participant_connection_aborted` for that identity's session, or
+ *   `room_finished` for its room. The session is the one `participant_joined` last named: a
+ *   rejoin under the same identity makes LiveKit remove the old session and say that one left,
+ *   which is not the caller leaving. When no session is known (no joined webhook since this
+ *   service started) or it is the known one, LiveKit is asked first, and an identity it still
+ *   has is kept (a rejoin whose joined webhook is still to come); one LiveKit cannot say about
+ *   is sent, since the webhook says it left;
  * - when the identity has not connected 30 s after it was registered;
  * - when a presence check (every tick until it connects, the first tick after this service
  *   starts, and every 30 s while connected) finds it gone: a webhook missed is not a call kept
@@ -96,6 +101,8 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
   const log = deps.log ?? (() => {});
   /** When presence was last asked, by delay id; absent after a restart, so the first tick asks. */
   const checkedAt = new Map<string, number>();
+  /** The LiveKit session (participant sid) each delay's identity last joined with, by delay id. */
+  const sessions = new Map<string, string>();
   /** Delays whose send failed: sent again, never restarted. */
   const leaving = new Set<string>();
   /** Work under way, by kind and delay id: one of each at a time for a leave. */
@@ -115,6 +122,7 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     );
     checkedAt.delete(leave.delayId);
     leaving.delete(leave.delayId);
+    sessions.delete(leave.delayId);
   }
 
   /** Is it in the room? null when LiveKit cannot say. */
@@ -229,6 +237,25 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
       );
   }
 
+  /** A `participant_left` or `participant_connection_aborted` for this leave's identity. */
+  async function left(leave: DelayedLeave, event: LiveKitEvent): Promise<void> {
+    const known = sessions.get(leave.delayId);
+    const sid = event.participantSid ?? null;
+    if (known !== undefined && sid !== null && sid !== known) {
+      log(
+        `superdial: an earlier session of ${where(leave)} ended; its leave is kept`,
+      );
+      return;
+    }
+    if ((await present(leave)) === true) {
+      log(
+        `superdial: ${where(leave)} is still in the room after a session ended; its leave is kept`,
+      );
+      return;
+    }
+    await send(leave, "left");
+  }
+
   const leaves: DelayedLeaves = {
     register(input) {
       // Not connected until LiveKit says so: a client that connected before it handed its delay
@@ -249,11 +276,14 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
               leave.delayId,
             );
             checkedAt.set(leave.delayId, now());
+            if (event.participantSid) {
+              sessions.set(leave.delayId, event.participantSid);
+            }
           }
           return;
         case "participant_left":
         case "participant_connection_aborted":
-          await Promise.all(matching(event).map((l) => send(l, "left")));
+          await Promise.all(matching(event).map((l) => left(l, event)));
           return;
         case "room_finished":
           await Promise.all(

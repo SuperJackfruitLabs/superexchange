@@ -50,7 +50,7 @@ const webhook = (event: string, extra: Record<string, unknown> = {}) =>
     id: "EV_1",
     createdAt: "1764200000",
     room: { name: "lkroom" },
-    participant: { identity: "@u:s:DEV" },
+    participant: { identity: "@u:s:DEV", sid: "PA_1" },
     ...extra,
   });
 
@@ -138,12 +138,14 @@ describe("calls: the LiveKit adapter", () => {
       event: "participant_left",
       room: "lkroom",
       identity: "@u:s:DEV",
+      participantSid: "PA_1",
     });
     const finished = webhook("room_finished", { participant: undefined });
     expect(await livekit.receive(finished, await signed(finished))).toEqual({
       event: "room_finished",
       room: "lkroom",
       identity: null,
+      participantSid: null,
     });
   });
 

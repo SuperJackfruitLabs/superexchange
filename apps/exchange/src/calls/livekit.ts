@@ -29,6 +29,12 @@ export interface LiveKitEvent {
   event: string;
   room: string | null;
   identity: string | null;
+  /**
+   * The participant's session id (`PA_…`): one identity has a new one each time it joins, and a
+   * rejoin under the same identity removes the old session with its own `participant_left`.
+   * Absent or null when the event names no participant.
+   */
+  participantSid?: string | null;
 }
 
 export interface LiveKit {
@@ -94,6 +100,7 @@ export function createLiveKit(
           event: event.event,
           room: event.room?.name || null,
           identity: event.participant?.identity || null,
+          participantSid: event.participant?.sid || null,
         };
       } catch {
         return null;

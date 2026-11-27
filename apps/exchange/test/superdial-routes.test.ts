@@ -373,7 +373,7 @@ describe("POST /v1/livekit-webhook (C5)", () => {
     event: "participant_left",
     id: "EV_1",
     room: { name: "lkroom" },
-    participant: { identity: "@p:s.example:DEV" },
+    participant: { identity: "@p:s.example:DEV", sid: "PA_1" },
   });
 
   test("a webhook LiveKit signed drives the loop", async () => {
@@ -390,6 +390,7 @@ describe("POST /v1/livekit-webhook (C5)", () => {
         event: "participant_left",
         room: "lkroom",
         identity: "@p:s.example:DEV",
+        participantSid: "PA_1",
       },
     ]);
   });

@@ -118,6 +118,14 @@ function setup(
   return { store, leaves, actions, done, presenceAsked, lines, advance, clock };
 }
 
+/** A webhook about LEAVE's identity in one of its sessions. */
+const sessionEvent = (name: string, participantSid: string) => ({
+  event: name,
+  room: "lk_a",
+  identity: "@u:s:DEV",
+  participantSid,
+});
+
 describe("calls: the delayed-leave loop", () => {
   test("the timings: a restart that times out still leaves the next one inside the delay", () => {
     expect(LEAVE_DELAY_MS).toBe(8000);
@@ -368,7 +376,7 @@ describe("calls: the delayed-leave loop", () => {
   test("a send that fails is kept and sent again on the next tick, never restarted", async () => {
     let down = true;
     const { store, leaves, actions, advance } = setup({
-      present: () => true,
+      present: () => false,
       action: (_id, action) => (action === "send" && down ? "throw" : "ok"),
     });
     await leaves.register(LEAVE);
@@ -416,6 +424,57 @@ describe("calls: the delayed-leave loop", () => {
     expect(store.delayedLeaves().map((l) => l.delayId)).toEqual([
       "syd_secret_1",
     ]);
+  });
+
+  test("a rejoin's stale session leaving does not send the live session's leave", async () => {
+    // A full reconnect: LiveKit admits the new session (sid B) under the same identity, removes
+    // the old one (sid A) and says that one left. Presence is not what holds the leave back here:
+    // LiveKit answers "not there" throughout, so only the session id does.
+    const { store, leaves, actions } = setup({ present: () => false });
+    await leaves.register(LEAVE);
+    await leaves.onEvent(sessionEvent("participant_joined", "PA_A"));
+    await leaves.onEvent(sessionEvent("participant_joined", "PA_B"));
+    await leaves.onEvent(sessionEvent("participant_left", "PA_A"));
+    await leaves.onEvent(
+      sessionEvent("participant_connection_aborted", "PA_A"),
+    );
+    expect(actions).toEqual([]);
+    expect(store.delayedLeaves()).toHaveLength(1);
+    await leaves.onEvent(sessionEvent("participant_left", "PA_B"));
+    expect(actions).toEqual([["syd_secret_1", "send"]]);
+    expect(store.delayedLeaves()).toEqual([]);
+  });
+
+  test("a leave for a session it never saw join is sent only once LiveKit says the identity is gone", async () => {
+    // After a restart of this service, or a joined webhook that never came: no session id is
+    // known, so LiveKit is asked whether the identity is still in the room.
+    let present = true;
+    const { store, leaves, actions } = setup({ present: () => present });
+    await leaves.register(LEAVE);
+    const left = {
+      event: "participant_left",
+      room: "lk_a",
+      identity: "@u:s:DEV",
+      participantSid: "PA_OLD",
+    };
+    await leaves.onEvent(left);
+    expect(actions).toEqual([]);
+    expect(store.delayedLeaves()).toHaveLength(1);
+    present = false;
+    await leaves.onEvent({ ...left, participantSid: "PA_NEW" });
+    expect(actions).toEqual([["syd_secret_1", "send"]]);
+  });
+
+  test("a leave LiveKit cannot confirm is still sent: the webhook says it left", async () => {
+    const { leaves, actions } = setup({ present: () => "throw" });
+    await leaves.register(LEAVE);
+    await leaves.onEvent({
+      event: "participant_left",
+      room: "lk_a",
+      identity: "@u:s:DEV",
+      participantSid: "PA_A",
+    });
+    expect(actions).toEqual([["syd_secret_1", "send"]]);
   });
 
   test("an event for an identity it does not keep changes nothing", async () => {
