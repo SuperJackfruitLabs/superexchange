@@ -65,10 +65,14 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
     what: string,
     waitMs: number,
   ): Promise<{ status: number; json: unknown }> {
+    // A timer of our own, not `AbortSignal.timeout`: Bun's fires late when nothing else holds
+    // the event loop (as in hub.ts), and a restart must give up well before its delay runs out.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), waitMs);
     try {
       const response = await doFetch(url, {
         ...init,
-        signal: AbortSignal.timeout(waitMs),
+        signal: controller.signal,
       });
       const text = await response.text();
       let json: unknown = null;
@@ -81,6 +85,8 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
     } catch {
       // Not chained: the cause can quote the URL, which carries a secret.
       throw new CallUpstreamError("homeserver", `${what} unreachable`);
+    } finally {
+      clearTimeout(timer);
     }
   }
 

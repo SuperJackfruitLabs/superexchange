@@ -111,10 +111,21 @@ export function createLiveKit(
     },
 
     async isConnected(room, identity) {
+      // The SDK's own `requestTimeout` rests on `AbortSignal.timeout`, which Bun fires late when
+      // nothing else holds the event loop (see hub.ts), so the answer is also raced against a
+      // timer of our own. The SDK's request is left to end by itself.
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timedOut = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new CallUpstreamError("livekit", "presence")),
+          LIVEKIT_API_TIMEOUT_MS,
+        );
+      });
       try {
-        await rooms.getParticipant(room, identity);
+        await Promise.race([rooms.getParticipant(room, identity), timedOut]);
         return true;
       } catch (error) {
+        if (error instanceof CallUpstreamError) throw error;
         if (
           typeof error === "object" &&
           error !== null &&
@@ -124,6 +135,8 @@ export function createLiveKit(
           return false;
         }
         throw new CallUpstreamError("livekit", "presence");
+      } finally {
+        clearTimeout(timer);
       }
     },
   };
