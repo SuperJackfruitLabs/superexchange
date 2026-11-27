@@ -8,6 +8,8 @@ import {
 } from "livekit-server-sdk";
 import {
   CallUpstreamError,
+  LIVEKIT_API_TIMEOUT_MS,
+  RESTART_INTERVAL_MS,
   TOKEN_TTL_SECONDS,
   createLiveKit,
   isDelayId,
@@ -25,6 +27,15 @@ const SETTINGS = {
   livekitApiKey: KEY,
   livekitApiSecret: SECRET,
 };
+
+/** A fetch that never answers: only its signal's abort ends it. */
+const hangUntilAborted = async (
+  _input: string | URL | Request,
+  init?: RequestInit,
+) =>
+  await new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+  });
 
 /** The Authorization header LiveKit signs a webhook body with. */
 async function signed(body: string, secret = SECRET): Promise<string> {
@@ -195,5 +206,26 @@ describe("calls: the LiveKit adapter", () => {
     expect(error).toBeInstanceOf(CallUpstreamError);
     expect(String(error)).not.toContain(SECRET);
     expect(error instanceof Error && error.cause).toBeUndefined();
+  });
+
+  test("a server API that hangs is unknown after LIVEKIT_API_TIMEOUT_MS, before the next pass", async () => {
+    // The SDK's client calls the global fetch: stand one in that never answers until aborted.
+    const real = globalThis.fetch;
+    globalThis.fetch = Object.assign(hangUntilAborted, {
+      preconnect: () => {},
+    });
+    try {
+      const livekit = createLiveKit(SETTINGS);
+      const started = performance.now();
+      const error = await livekit
+        .isConnected("lkroom", "@u:s:DEV")
+        .catch((e: unknown) => e);
+      const waited = performance.now() - started;
+      expect(error).toBeInstanceOf(CallUpstreamError);
+      expect(waited).toBeGreaterThanOrEqual(LIVEKIT_API_TIMEOUT_MS - 50);
+      expect(waited).toBeLessThan(RESTART_INTERVAL_MS);
+    } finally {
+      globalThis.fetch = real;
+    }
   });
 });

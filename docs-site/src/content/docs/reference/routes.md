@@ -111,13 +111,16 @@ Request: `{"room_id", "device_id", "delay_id", "openid_token"}`; `204`. The same
 this registration's own user), else `403` with reason `not_your_device`. Then the delay is kept,
 by LiveKit room and identity (a new one replaces the old):
 
-- while LiveKit has the identity in the room, the delay is restarted every 5 s:
+- while LiveKit has the identity in the room, the delay is restarted every 3 s:
   `POST /_matrix/client/unstable/org.matrix.msc4140/delayed_events/{delay_id}/restart`, with no
-  access token (tuwunel 2.0.0 accepts the delay id as the authority only on this path form);
+  access token (tuwunel 2.0.0 accepts the delay id as the authority only on this path form). The
+  cadence holds whatever is slow: each restart waits on nothing else (not its presence check, not
+  another leave's restart) and gives up after 2.5 s, so one failed restart still leaves the next
+  inside the 8 s delay;
 - it is sent (`…/{delay_id}/send`) and forgotten when LiveKit says the identity left
   (`participant_left`) or its connection aborted, when the room finished, when the identity has
   not connected 30 s after it was handed over, or when a presence check finds it gone. Presence
-  (LiveKit's server API) is asked every 5 s until it connects, on the first pass after the service
+  (LiveKit's server API, 2.5 s timeout) is asked every 3 s until it connects, on the first pass after the service
   starts, and every 30 s while it is connected, so a missed webhook does not keep a call open;
 - LiveKit's server API unreachable: a connected identity keeps being restarted, a waiting one is
   sent at 30 s. A delay the homeserver no longer has is forgotten; a send that fails is tried

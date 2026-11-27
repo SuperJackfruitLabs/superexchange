@@ -17,6 +17,12 @@ import { CallUpstreamError } from "./naming.ts";
  */
 export const TOKEN_TTL_SECONDS = 600;
 
+/**
+ * How long a server API call (a presence check) may take. Under the delayed-leave loop's restart
+ * interval, so a blackholed API answers "cannot say" before the next pass.
+ */
+export const LIVEKIT_API_TIMEOUT_MS = 2_500;
+
 /** What the delayed-leave loop reads from a webhook. */
 export interface LiveKitEvent {
   /** `participant_joined`, `participant_left`, `participant_connection_aborted`, `room_finished`, … */
@@ -56,7 +62,8 @@ export function createLiveKit(
   const rooms =
     deps.rooms ??
     new RoomServiceClient(settings.livekitApiUrl, key, secret, {
-      requestTimeout: 5,
+      // In seconds.
+      requestTimeout: LIVEKIT_API_TIMEOUT_MS / 1000,
     });
 
   return {

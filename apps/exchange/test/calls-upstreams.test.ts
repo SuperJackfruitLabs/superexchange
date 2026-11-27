@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
   CallUpstreamError,
+  DELAYED_EVENT_TIMEOUT_MS,
+  RESTART_INTERVAL_MS,
   createCallHomeserver,
   createMembershipCheck,
 } from "../src/calls/index.ts";
@@ -174,6 +176,24 @@ describe("calls: the tokenless delayed-event action (MSC4140)", () => {
       );
       expect(error.message).not.toContain("syd_secret");
     }
+  });
+
+  test("a restart that hangs gives up at DELAYED_EVENT_TIMEOUT_MS, before the next is due", async () => {
+    const homeserver = createCallHomeserver({
+      homeserverUrl: "https://matrix.s.example",
+      serverName: "s.example",
+      fetch: sequence(["hang"]).fetch,
+      // The OpenID check's own, longer timeout is not the action's.
+      timeoutMs: 60_000,
+    });
+    const started = performance.now();
+    const error = await upstreamError(
+      homeserver.delayedEvent("syd_1", "restart"),
+    );
+    const waited = performance.now() - started;
+    expect(error.message).toContain("delayed event restart unreachable");
+    expect(waited).toBeGreaterThanOrEqual(DELAYED_EVENT_TIMEOUT_MS - 50);
+    expect(waited).toBeLessThan(RESTART_INTERVAL_MS);
   });
 });
 

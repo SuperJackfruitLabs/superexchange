@@ -3,8 +3,11 @@
  *
  * A caller arms an MSC4140 delayed leave (its empty call membership, sent by the homeserver after
  * 8 s unless restarted), then hands its `delay_id` here. While LiveKit has that identity in the
- * room, this restarts the delay every 5 s, so a client that dies without hanging up still leaves
- * the call once LiveKit notices it gone. It sends the delay:
+ * room, this restarts the delay every 3 s, so a client that dies without hanging up still leaves
+ * the call once LiveKit notices it gone. The restarts keep that cadence whatever else is slow:
+ * each pass starts on time, whether or not the last one finished; a leave's restart waits on
+ * nothing (not its presence check, not another leave), and gives up before the next is due, so one
+ * failed restart still leaves the next inside the 8 s. It sends the delay:
  *
  * - on `participant_left` or `participant_connection_aborted` for that identity, or
  *   `room_finished` for its room;
@@ -25,8 +28,13 @@ import type { DelayedLeave, Store } from "../store/index.ts";
 import type { CallHomeserver } from "./homeserver.ts";
 import type { LiveKit, LiveKitEvent } from "./livekit.ts";
 
-/** How often a connected identity's delay is restarted. The delay itself is 8 s. */
-export const RESTART_INTERVAL_MS = 5_000;
+/** The delay a caller arms its leave with (C5): sent this long after the last restart. */
+export const LEAVE_DELAY_MS = 8_000;
+/**
+ * How often a connected identity's delay is restarted. A restart gives up after
+ * `DELAYED_EVENT_TIMEOUT_MS`, under this, so two intervals (one failed restart) fit in the delay.
+ */
+export const RESTART_INTERVAL_MS = 3_000;
 /** How long after registering an identity may take to connect before its leave is sent. */
 export const CONNECT_GRACE_MS = 30_000;
 /** How often a connected identity's presence is asked of LiveKit again. */
@@ -54,11 +62,15 @@ export interface DelayedLeaves {
   ): Promise<void>;
   /** A verified LiveKit webhook. */
   onEvent(event: LiveKitEvent): Promise<void>;
-  /** One pass over every kept leave. A pass already running makes this a no-op. */
+  /**
+   * One pass over every kept leave: it starts each leave's due work (a restart, a presence check, a
+   * send) that is not already under way, and settles when the work it started has. Work still
+   * under way from an earlier pass is not started again.
+   */
   tick(): Promise<void>;
   /**
-   * Tick now, then every `RESTART_INTERVAL_MS`. `schedule` is the test seam: it runs `run` after
-   * `ms` and answers how to cancel that.
+   * Tick now, then every `RESTART_INTERVAL_MS`, on time whether or not a pass has finished.
+   * `schedule` is the test seam: it runs `run` after `ms` and answers how to cancel that.
    */
   start(options?: {
     schedule?: (run: () => void, ms: number) => () => void;
@@ -75,6 +87,10 @@ function later(run: () => void, ms: number): () => void {
   return () => clearTimeout(timer);
 }
 
+async function settled(work: Promise<void>[]): Promise<void> {
+  await Promise.all(work);
+}
+
 export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
   const now = deps.now ?? Date.now;
   const log = deps.log ?? (() => {});
@@ -82,7 +98,12 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
   const checkedAt = new Map<string, number>();
   /** Delays whose send failed: sent again, never restarted. */
   const leaving = new Set<string>();
-  let running: Promise<void> | null = null;
+  /** Work under way, by kind and delay id: one of each at a time for a leave. */
+  const underWay = {
+    restart: new Set<string>(),
+    presence: new Set<string>(),
+    send: new Set<string>(),
+  };
   let stopped = false;
   let cancel: (() => void) | null = null;
 
@@ -106,8 +127,28 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     }
   }
 
-  async function send(leave: DelayedLeave, why: string): Promise<void> {
+  /** Run `work` for this leave unless that kind of work is already under way for it. */
+  async function once(
+    kind: keyof typeof underWay,
+    leave: DelayedLeave,
+    work: () => Promise<void>,
+  ): Promise<void> {
+    const busy = underWay[kind];
+    if (busy.has(leave.delayId)) return;
+    busy.add(leave.delayId);
+    try {
+      await work();
+    } finally {
+      busy.delete(leave.delayId);
+    }
+  }
+
+  function send(leave: DelayedLeave, why: string): Promise<void> {
     leaving.add(leave.delayId);
+    return once("send", leave, () => sendNow(leave, why));
+  }
+
+  async function sendNow(leave: DelayedLeave, why: string): Promise<void> {
     try {
       await deps.homeserver.delayedEvent(leave.delayId, "send");
       forget(leave);
@@ -119,7 +160,12 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     }
   }
 
-  async function restart(leave: DelayedLeave): Promise<void> {
+  function restart(leave: DelayedLeave): Promise<void> {
+    return once("restart", leave, () => restartNow(leave));
+  }
+
+  async function restartNow(leave: DelayedLeave): Promise<void> {
+    if (leaving.has(leave.delayId)) return;
     try {
       if (
         (await deps.homeserver.delayedEvent(leave.delayId, "restart")) ===
@@ -137,27 +183,35 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     }
   }
 
-  async function visit(leave: DelayedLeave): Promise<void> {
+  /** Start this leave's due work; settles when that work has. */
+  function visit(leave: DelayedLeave): Promise<void> {
     if (leaving.has(leave.delayId)) return send(leave, "left");
     if (leave.connectedAt === null) {
-      if ((await present(leave)) === true) {
-        deps.store.markDelayedLeaveConnected(
-          leave.livekitRoom,
-          leave.identity,
-          leave.delayId,
-        );
-        return restart(leave);
-      }
-      if (now() - Date.parse(leave.registeredAt) >= CONNECT_GRACE_MS) {
-        return send(leave, "never connected");
-      }
-      return;
+      return once("presence", leave, async () => {
+        if ((await present(leave)) === true) {
+          deps.store.markDelayedLeaveConnected(
+            leave.livekitRoom,
+            leave.identity,
+            leave.delayId,
+          );
+          return restart(leave);
+        }
+        if (now() - Date.parse(leave.registeredAt) >= CONNECT_GRACE_MS) {
+          return send(leave, "never connected");
+        }
+      });
     }
+    // Restarted first, and not after the presence check: a slow LiveKit must not let it fire.
+    const work = [restart(leave)];
     const last = checkedAt.get(leave.delayId);
     if (last === undefined || now() - last >= PRESENCE_RECHECK_MS) {
-      if ((await present(leave)) === false) return send(leave, "is gone");
+      work.push(
+        once("presence", leave, async () => {
+          if ((await present(leave)) === false) await send(leave, "is gone");
+        }),
+      );
     }
-    return restart(leave);
+    return settled(work);
   }
 
   async function pass(): Promise<void> {
@@ -212,27 +266,23 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     },
 
     tick() {
-      if (running !== null) return running;
-      running = pass().finally(() => {
-        running = null;
-      });
-      return running;
+      return pass();
     },
 
     start(options = {}) {
       const schedule = options.schedule ?? later;
       stopped = false;
-      const run = async () => {
-        try {
-          await leaves.tick();
-        } catch {
+      const run = () => {
+        if (stopped) return;
+        // The next pass is set before this one runs, so a slow pass never delays it.
+        cancel = schedule(run, RESTART_INTERVAL_MS);
+        leaves.tick().catch(() => {
           log(
             "superdial: a delayed-leave pass failed; the next one runs on time",
           );
-        }
-        if (!stopped) cancel = schedule(() => void run(), RESTART_INTERVAL_MS);
+        });
       };
-      void run();
+      run();
     },
 
     stop() {

@@ -15,11 +15,20 @@
  */
 import { CallUpstreamError, fieldOf } from "./naming.ts";
 
+/**
+ * How long a delayed-event restart or send may take. Under the delayed-leave loop's restart
+ * interval, so a restart that hangs gives up before the next one is due.
+ */
+export const DELAYED_EVENT_TIMEOUT_MS = 2_500;
+
 export interface CallHomeserverDeps {
   homeserverUrl: string;
   serverName: string;
   fetch?: typeof fetch;
+  /** The OpenID check's timeout; 5 s. */
   timeoutMs?: number;
+  /** The delayed-event action's timeout; `DELAYED_EVENT_TIMEOUT_MS`. */
+  delayedEventTimeoutMs?: number;
 }
 
 export interface CallHomeserver {
@@ -45,6 +54,8 @@ const ACCESS_TOKEN = /^[\x21-\x7e]{1,1024}$/;
 export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
   const doFetch = deps.fetch ?? fetch;
   const timeoutMs = deps.timeoutMs ?? 5_000;
+  const delayedEventTimeoutMs =
+    deps.delayedEventTimeoutMs ?? DELAYED_EVENT_TIMEOUT_MS;
   const base = deps.homeserverUrl.replace(/\/+$/, "");
   const userSuffix = `:${deps.serverName}`;
 
@@ -52,11 +63,12 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
     url: string,
     init: RequestInit,
     what: string,
+    waitMs: number,
   ): Promise<{ status: number; json: unknown }> {
     try {
       const response = await doFetch(url, {
         ...init,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(waitMs),
       });
       const text = await response.text();
       let json: unknown = null;
@@ -81,7 +93,12 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
         return null;
       }
       const url = `${base}/_matrix/federation/v1/openid/userinfo?access_token=${encodeURIComponent(accessToken)}`;
-      const answer = await request(url, { method: "GET" }, "userinfo");
+      const answer = await request(
+        url,
+        { method: "GET" },
+        "userinfo",
+        timeoutMs,
+      );
       if (answer.status === 401 || answer.status === 403) return null;
       if (answer.status !== 200) {
         throw new CallUpstreamError("homeserver", `userinfo ${answer.status}`);
@@ -108,6 +125,7 @@ export function createCallHomeserver(deps: CallHomeserverDeps): CallHomeserver {
           body: "{}",
         },
         `delayed event ${action}`,
+        delayedEventTimeoutMs,
       );
       if (answer.status >= 200 && answer.status < 300) return "ok";
       // 404 (unknown), 409 (already sent or cancelled) and the like: the delay is gone. 401 and
