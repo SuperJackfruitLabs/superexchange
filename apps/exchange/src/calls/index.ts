@@ -42,6 +42,8 @@ export {
 } from "./hub.ts";
 export {
   CONNECT_GRACE_MS,
+  EVENT_IDS_KEPT,
+  EVENT_ID_WINDOW_MS,
   LEAVE_DELAY_MS,
   PRESENCE_RECHECK_MS,
   RESTART_INTERVAL_MS,

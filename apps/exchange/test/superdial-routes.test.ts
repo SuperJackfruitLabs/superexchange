@@ -411,6 +411,7 @@ describe("POST /v1/livekit-webhook (C5)", () => {
         room: "lkroom",
         identity: "@p:s.example:DEV",
         participantSid: "PA_1",
+        id: "EV_1",
       },
     ]);
   });

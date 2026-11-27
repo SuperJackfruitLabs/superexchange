@@ -139,6 +139,7 @@ describe("calls: the LiveKit adapter", () => {
       room: "lkroom",
       identity: "@u:s:DEV",
       participantSid: "PA_1",
+      id: "EV_1",
     });
     const finished = webhook("room_finished", { participant: undefined });
     expect(await livekit.receive(finished, await signed(finished))).toEqual({
@@ -146,6 +147,7 @@ describe("calls: the LiveKit adapter", () => {
       room: "lkroom",
       identity: null,
       participantSid: null,
+      id: "EV_1",
     });
   });
 

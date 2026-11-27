@@ -140,4 +140,5 @@ delay id is its holder's authority over that one event: it is kept there and nev
 ### `POST /v1/livekit-webhook`
 
 LiveKit's webhook (`application/webhook+json`), read only when its `Authorization` JWT is signed
-with `LIVEKIT_API_SECRET` over this body; `200 {}`, or `401` and nothing changes.
+with `LIVEKIT_API_SECRET` over this body; `200 {}`, or `401` and nothing changes. A webhook whose id
+was seen before (among the last 1000, within 10 min) is answered `200` and not acted on again.

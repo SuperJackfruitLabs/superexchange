@@ -35,6 +35,8 @@ export interface LiveKitEvent {
    * Absent or null when the event names no participant.
    */
   participantSid?: string | null;
+  /** The event's own id (`EV_…`), the same on each delivery of it. Absent or null when unknown. */
+  id?: string | null;
 }
 
 export interface LiveKit {
@@ -101,6 +103,7 @@ export function createLiveKit(
           room: event.room?.name || null,
           identity: event.participant?.identity || null,
           participantSid: event.participant?.sid || null,
+          id: event.id || null,
         };
       } catch {
         return null;

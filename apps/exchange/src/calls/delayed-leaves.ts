@@ -22,6 +22,9 @@
  *   open forever. Asking until it connects also covers a client that connected before it handed
  *   its delay over, which no `participant_joined` will follow.
  *
+ * A webhook whose id was seen before (among the last 1000, within 10 min) is not acted on again: a
+ * redelivery or a replay of an old `participant_joined` would make the live session look stale.
+ *
  * LiveKit's server API unreachable: a connected identity keeps being restarted (the webhooks still
  * say when it leaves); a pending one is sent at 30 s. A delay the homeserver no longer has is
  * forgotten. A send that fails is tried again on the next tick and never restarted after.
@@ -44,6 +47,10 @@ export const RESTART_INTERVAL_MS = 3_000;
 export const CONNECT_GRACE_MS = 30_000;
 /** How often a connected identity's presence is asked of LiveKit again. */
 export const PRESENCE_RECHECK_MS = 30_000;
+/** How many webhook ids are remembered, so a repeat is not acted on again. */
+export const EVENT_IDS_KEPT = 1000;
+/** How long a webhook id is remembered. */
+export const EVENT_ID_WINDOW_MS = 600_000;
 
 export interface DelayedLeavesDeps {
   store: Pick<
@@ -111,8 +118,24 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     presence: new Set<string>(),
     send: new Set<string>(),
   };
+  /** Webhook ids seen, oldest first, with when. */
+  const seenEvents = new Map<string, number>();
   let stopped = false;
   let cancel: (() => void) | null = null;
+
+  /** Remember a webhook's id; false when it was seen already. */
+  function firstSight(id: string): boolean {
+    const t = now();
+    for (const [old, at] of seenEvents) {
+      if (t - at < EVENT_ID_WINDOW_MS && seenEvents.size < EVENT_IDS_KEPT) {
+        break;
+      }
+      seenEvents.delete(old);
+    }
+    if (seenEvents.has(id)) return false;
+    seenEvents.set(id, t);
+    return true;
+  }
 
   function forget(leave: DelayedLeave): void {
     deps.store.forgetDelayedLeave(
@@ -256,6 +279,36 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     await send(leave, "left");
   }
 
+  /** Act on a webhook. */
+  async function act(event: LiveKitEvent): Promise<void> {
+    switch (event.event) {
+      case "participant_joined":
+        for (const leave of matching(event)) {
+          deps.store.markDelayedLeaveConnected(
+            leave.livekitRoom,
+            leave.identity,
+            leave.delayId,
+          );
+          checkedAt.set(leave.delayId, now());
+          if (event.participantSid) {
+            sessions.set(leave.delayId, event.participantSid);
+          }
+        }
+        return;
+      case "participant_left":
+      case "participant_connection_aborted":
+        await Promise.all(matching(event).map((l) => left(l, event)));
+        return;
+      case "room_finished":
+        await Promise.all(
+          matching(event).map((l) => send(l, "was in a room that finished")),
+        );
+        return;
+      default:
+        return;
+    }
+  }
+
   const leaves: DelayedLeaves = {
     register(input) {
       // Not connected until LiveKit says so: a client that connected before it handed its delay
@@ -267,31 +320,19 @@ export function createDelayedLeaves(deps: DelayedLeavesDeps): DelayedLeaves {
     },
 
     async onEvent(event) {
-      switch (event.event) {
-        case "participant_joined":
-          for (const leave of matching(event)) {
-            deps.store.markDelayedLeaveConnected(
-              leave.livekitRoom,
-              leave.identity,
-              leave.delayId,
-            );
-            checkedAt.set(leave.delayId, now());
-            if (event.participantSid) {
-              sessions.set(leave.delayId, event.participantSid);
-            }
-          }
-          return;
-        case "participant_left":
-        case "participant_connection_aborted":
-          await Promise.all(matching(event).map((l) => left(l, event)));
-          return;
-        case "room_finished":
-          await Promise.all(
-            matching(event).map((l) => send(l, "was in a room that finished")),
-          );
-          return;
-        default:
-          return;
+      const id = event.id ?? null;
+      if (id !== null && !firstSight(id)) {
+        log(
+          `superdial: a LiveKit webhook seen before (${event.event}) is ignored`,
+        );
+        return;
+      }
+      try {
+        await act(event);
+      } catch (error) {
+        // Not acted on: a redelivery may try again.
+        if (id !== null) seenEvents.delete(id);
+        throw error;
       }
     },
 

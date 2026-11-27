@@ -2,6 +2,8 @@ import { afterEach, describe, expect, test } from "bun:test";
 import {
   CONNECT_GRACE_MS,
   CallUpstreamError,
+  EVENT_IDS_KEPT,
+  EVENT_ID_WINDOW_MS,
   LEAVE_DELAY_MS,
   PRESENCE_RECHECK_MS,
   RESTART_INTERVAL_MS,
@@ -124,6 +126,12 @@ const sessionEvent = (name: string, participantSid: string) => ({
   room: "lk_a",
   identity: "@u:s:DEV",
   participantSid,
+});
+
+/** A `participant_left` for LEAVE's identity in session PA_A, with webhook id `id`. */
+const leftAs = (id: string) => ({
+  ...sessionEvent("participant_left", "PA_A"),
+  id,
 });
 
 describe("calls: the delayed-leave loop", () => {
@@ -475,6 +483,52 @@ describe("calls: the delayed-leave loop", () => {
       participantSid: "PA_A",
     });
     expect(actions).toEqual([["syd_secret_1", "send"]]);
+  });
+
+  test("a webhook seen before is not acted on again", async () => {
+    // A replayed joined for the old session would make the live session's leave look stale.
+    const { leaves, actions } = setup({ present: () => false });
+    await leaves.register(LEAVE);
+    const joinedA = {
+      ...sessionEvent("participant_joined", "PA_A"),
+      id: "EV_1",
+    };
+    await leaves.onEvent(joinedA);
+    await leaves.onEvent({
+      ...sessionEvent("participant_joined", "PA_B"),
+      id: "EV_2",
+    });
+    await leaves.onEvent(joinedA);
+    await leaves.onEvent({
+      ...sessionEvent("participant_left", "PA_B"),
+      id: "EV_3",
+    });
+    expect(actions).toEqual([["syd_secret_1", "send"]]);
+  });
+
+  test("the webhook ids it remembers are bounded, by count and by age", async () => {
+    expect(EVENT_IDS_KEPT).toBe(1000);
+    expect(EVENT_ID_WINDOW_MS).toBe(600_000);
+    // Each left it acts on asks LiveKit once; LiveKit still has the identity, so nothing is sent.
+    const { leaves, presenceAsked, advance } = setup({ present: () => true });
+    await leaves.register(LEAVE);
+    await leaves.onEvent(leftAs("EV_1"));
+    await leaves.onEvent(leftAs("EV_1"));
+    expect(presenceAsked).toHaveLength(1);
+    advance(EVENT_ID_WINDOW_MS);
+    await leaves.onEvent(leftAs("EV_1"));
+    expect(presenceAsked).toHaveLength(2);
+    for (let i = 0; i < EVENT_IDS_KEPT; i++) {
+      await leaves.onEvent(leftAs(`EV_other_${i}`));
+    }
+    expect(presenceAsked).toHaveLength(2 + EVENT_IDS_KEPT);
+    await leaves.onEvent(leftAs("EV_1"));
+    expect(presenceAsked).toHaveLength(3 + EVENT_IDS_KEPT);
+    // An event with no id is never taken for a repeat.
+    const { id: _, ...noId } = leftAs("x");
+    await leaves.onEvent(noId);
+    await leaves.onEvent(noId);
+    expect(presenceAsked).toHaveLength(5 + EVENT_IDS_KEPT);
   });
 
   test("an event for an identity it does not keep changes nothing", async () => {
