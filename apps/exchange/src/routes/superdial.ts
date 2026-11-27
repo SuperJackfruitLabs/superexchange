@@ -2,15 +2,17 @@
  * The superdial token service's routes (C5). Served only when its settings are present.
  *
  * - `POST /v1/token` with `{room_id, device_id, openid_token}`: the OpenID token is checked with
- *   the homeserver (who the caller is: never a user id from the body), the hub is asked whether
- *   that user may call in that room (C4), and a LiveKit token is minted for identity
+ *   the homeserver (who the caller is: never a user id from the body), the device must be one the
+ *   homeserver lists for that user (else `400 M_INVALID_PARAM`: the contract keeps 403 for the
+ *   hub's refusals), the hub is asked whether that user may call in that room (C4), and a LiveKit
+ *   token is minted for identity
  *   `{user_id}:{device_id}` in room `base64url_nopad(sha256(room_id))`:
  *   `200 {url, jwt, identity, livekit_room}`. A hub refusal is
  *   `403 {"errcode":"M_FORBIDDEN","error":"Calls are not available for this agent yet","reason":<C4 reason>}`
  *   (treaty `schemas/http/superexchange/livekit-token.v1`).
- * - `POST /v1/delayed-leave` with `{room_id, device_id, delay_id, openid_token}`: the same two
- *   checks, and the device must be one the homeserver lists for that user (else 403 with reason
- *   `not_your_device`, this service's own); the delay is kept by the delayed-leave loop: `204`.
+ * - `POST /v1/delayed-leave` with `{room_id, device_id, delay_id, openid_token}`: the same three
+ *   checks, a device that is not the caller's answered 403 with reason `not_your_device` (this
+ *   service's own); the delay is kept by the delayed-leave loop: `204`.
  * - `POST /v1/livekit-webhook`: LiveKit's webhook, read only when signed with the API secret;
  *   `200`, or `401`.
  *
@@ -173,9 +175,34 @@ export function createSuperdialHandler(
     }
   }
 
+  /**
+   * Null when the device is one the homeserver lists for the user, else the answer that ends the
+   * request: `refusal` when it is not, 503 when the list cannot be read.
+   */
+  async function ownDevice(
+    userId: string,
+    deviceId: string,
+    refusal: () => Response,
+  ): Promise<Response | null> {
+    let devices: string[];
+    try {
+      devices = await deps.userDevices(userId);
+    } catch {
+      return unavailable(new CallUpstreamError("homeserver", "device list"));
+    }
+    if (devices.includes(deviceId)) return null;
+    log(`superdial: ${userId} named a device that is not theirs`);
+    return refusal();
+  }
+
   async function token(request: Request): Promise<Response> {
     const c = await caller(request);
     if (!c.ok) return c.response;
+    // treaty livekit-token.v1 keeps 403 for the hub's refusals and their four reasons.
+    const notTheirs = await ownDevice(c.userId, c.deviceId, () =>
+      invalid("device_id is not one of the caller's devices"),
+    );
+    if (notTheirs !== null) return notTheirs;
     const refused = await membership(c.userId, c.roomId);
     if (refused !== null) return refused;
     const identity = livekitIdentity(c.userId, c.deviceId);
@@ -195,16 +222,10 @@ export function createSuperdialHandler(
     if (!c.ok) return c.response;
     const delayId = fieldOf(c.body, "delay_id");
     if (!isDelayId(delayId)) return invalid("delay_id is not a delay id");
-    let devices: string[];
-    try {
-      devices = await deps.userDevices(c.userId);
-    } catch {
-      return unavailable(new CallUpstreamError("homeserver", "device list"));
-    }
-    if (!devices.includes(c.deviceId)) {
-      log(`superdial: ${c.userId} named a device that is not theirs`);
-      return forbidden("not_your_device", "The device is not the caller's");
-    }
+    const notTheirs = await ownDevice(c.userId, c.deviceId, () =>
+      forbidden("not_your_device", "The device is not the caller's"),
+    );
+    if (notTheirs !== null) return notTheirs;
     const refused = await membership(c.userId, c.roomId);
     if (refused !== null) return refused;
     const identity = livekitIdentity(c.userId, c.deviceId);

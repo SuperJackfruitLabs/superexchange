@@ -86,9 +86,12 @@ Request: `{"room_id": "!r:s", "device_id": "DEV", "openid_token": {<the homeserv
    (`GET /_matrix/federation/v1/openid/userinfo?access_token=…`). Only a token whose
    `matrix_server_name` is `MATRIX_SERVER_NAME` is asked about, and only a user of this server is
    accepted back. A user id in the body is never believed.
-2. The AgentPod hub is asked whether that user may call in that room
+2. The device must be one the homeserver lists for that user (`keys/query`, asked as this
+   registration's own user), else `400 M_INVALID_PARAM`: the contract keeps `403` for the hub's
+   refusals.
+3. The AgentPod hub is asked whether that user may call in that room
    (`POST {SUPERDIAL_HUB_URL}/internal/superdial/membership`, contract C4).
-3. A LiveKit token is minted for identity `{user_id}:{device_id}` in the LiveKit room
+4. A LiveKit token is minted for identity `{user_id}:{device_id}` in the LiveKit room
    `base64url_nopad(sha256(room_id))`, for that room only: join, publish, subscribe, and set its
    own attributes (superdial-agent shows its call state that way). It is good for 600 s; LiveKit
    refreshes a joined participant's token itself.
@@ -97,7 +100,7 @@ Request: `{"room_id": "!r:s", "device_id": "DEV", "openid_token": {<the homeserv
 | --- | --- |
 | `200 {"url", "jwt", "identity", "livekit_room"}` | The hub allows the call |
 | `403 {"errcode":"M_FORBIDDEN","error":"Calls are not available for this agent yet","reason":…}` | The hub refuses: `not_member`, `not_agent_room`, `harness_mode` or `calls_disabled` |
-| `400 M_BAD_JSON` / `M_INVALID_PARAM` | Not a JSON object, or a field that is not what it should be |
+| `400 M_BAD_JSON` / `M_INVALID_PARAM` | Not a JSON object, a field that is not what it should be, or a device that is not the caller's |
 | `401 M_UNAUTHORIZED` | The homeserver does not accept the OpenID token, or it is another server's |
 | `413` | Over 16 KiB |
 | `503 M_UNKNOWN` | The homeserver or the hub cannot answer (a hub that refuses `SUPERDIAL_MEMBERSHIP_TOKEN` included; it is logged) |
@@ -106,9 +109,9 @@ Only the `200` and the `403` are contracted; the others are this service's own.
 
 ### `POST /v1/delayed-leave`
 
-Request: `{"room_id", "device_id", "delay_id", "openid_token"}`; `204`. The same two checks as
-`/v1/token`, and the device must be one the homeserver lists for that user (`keys/query`, asked as
-this registration's own user), else `403` with reason `not_your_device`. Then the delay is kept,
+Request: `{"room_id", "device_id", "delay_id", "openid_token"}`; `204`. The same three checks as
+`/v1/token`, except that a device that is not the caller's is `403` with reason `not_your_device`
+(only the `204` is contracted here). Then the delay is kept,
 by LiveKit room and identity (a new one replaces the old):
 
 - while LiveKit has the identity in the room, the delay is restarted every 3 s:

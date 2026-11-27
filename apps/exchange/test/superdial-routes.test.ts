@@ -214,6 +214,26 @@ describe("POST /v1/token (C5)", () => {
     expect(s.checked).toEqual([["@p:s.example", ROOM]]);
   });
 
+  test("a device that is not the caller's gets no token, and the hub is not asked", async () => {
+    // Not 403: treaty livekit-token.v1 keeps 403 for the hub's refusals and their four reasons.
+    const s = setup({ devices: ["OTHER"] });
+    const response = await s.handle(tokenRequest());
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      errcode: "M_INVALID_PARAM",
+      error: "device_id is not one of the caller's devices",
+    });
+    expect(s.checked).toEqual([]);
+  });
+
+  test("a device list that cannot be read is 503, and nothing is minted", async () => {
+    const s = setup({ devices: "throw" });
+    const response = await s.handle(tokenRequest());
+    expect(response.status).toBe(503);
+    expect(await json(response)).not.toHaveProperty("jwt");
+    expect(s.checked).toEqual([]);
+  });
+
   test("each refusal the hub gives is 403 with its reason, and nothing is minted", async () => {
     for (const reason of [
       "not_member",
