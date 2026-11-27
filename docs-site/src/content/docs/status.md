@@ -31,6 +31,13 @@ person's answer back, and reconcile work that took another route.
 - A production release snapshots the store first, and puts the previous release back when the
   new one fails its checks.
 
+## Calls (superdial)
+
+Built, not yet deployed: the LiveKit token service and the cleanup after a dead call client
+([HTTP routes](/reference/routes/#superdials-token-service)). It is off until its settings are
+present, needs the AgentPod hub's membership check and a LiveKit server, and supports one
+homeserver: **tuwunel 2.0.0**.
+
 ## What it needs from SuperPipeline
 
 Three things SuperExchange uses were added to SuperPipeline in **v0.0.30** (2026-11-12). Against

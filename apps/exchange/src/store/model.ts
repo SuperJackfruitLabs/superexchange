@@ -50,6 +50,23 @@ export interface PendingDecrypt {
   firstSeenAt: string;
 }
 
+/**
+ * A call client's delayed leave (superdial, C5): the MSC4140 delay that sends its empty call
+ * membership, kept while LiveKit has the identity in the room.
+ */
+export interface DelayedLeave {
+  /** The LiveKit room (C5's name for the Matrix room). */
+  livekitRoom: string;
+  /** The LiveKit identity, `{user_id}:{device_id}`. */
+  identity: string;
+  userId: string;
+  roomId: string;
+  delayId: string;
+  registeredAt: string;
+  /** When LiveKit was first seen to have the identity connected; null until then. */
+  connectedAt: string | null;
+}
+
 /** One option a gate offered when it was posted. */
 export interface GateOfferOption {
   id: string;
@@ -642,5 +659,27 @@ export interface Store {
    * never act on the same event twice.
    */
   claimPendingDecrypt(eventId: string): boolean;
+
+  /**
+   * Record a delayed leave, replacing any for the same LiveKit room and identity (a client that
+   * armed a new delay); not connected until marked.
+   */
+  recordDelayedLeave(
+    input: Omit<DelayedLeave, "registeredAt" | "connectedAt">,
+  ): DelayedLeave;
+  /** Every delayed leave, oldest first. */
+  delayedLeaves(): DelayedLeave[];
+  /** Mark it connected, only while it still holds this delay. True when it did. */
+  markDelayedLeaveConnected(
+    livekitRoom: string,
+    identity: string,
+    delayId: string,
+  ): boolean;
+  /** Forget it, only while it still holds this delay. True only for the caller that removed it. */
+  forgetDelayedLeave(
+    livekitRoom: string,
+    identity: string,
+    delayId: string,
+  ): boolean;
   close(): void;
 }

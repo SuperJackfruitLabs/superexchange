@@ -50,6 +50,7 @@ describe("loadConfig", () => {
       },
       superpipelineUrl: "https://pipeline.example",
       sweepSeconds: 60,
+      superdial: null,
     });
   });
 
@@ -300,5 +301,84 @@ describe("secret comparison", () => {
     expect(tokenMatchesSha256(hash, hash)).toBe(false);
     expect(tokenMatchesSha256("", "")).toBe(false);
     expect(tokenMatchesSha256("ab", "tok")).toBe(false);
+  });
+});
+
+describe("the superdial token service's settings", () => {
+  const CALLS = {
+    LIVEKIT_URL: "wss://lk.example",
+    LIVEKIT_API_KEY: "lk-key-for-tests",
+    LIVEKIT_API_SECRET: "lk-secret-for-tests-0123456789abcdef",
+    SUPERDIAL_HUB_URL: "https://hub.example/",
+    SUPERDIAL_MEMBERSHIP_TOKEN: "membership-token-for-tests",
+  };
+
+  test("none set: the token service is off", () => {
+    expect(loadConfig(FULL).superdial).toBeNull();
+  });
+
+  test("all set: read, with the server API derived from the public URL", () => {
+    expect(loadConfig({ ...FULL, ...CALLS }).superdial).toEqual({
+      livekitUrl: "wss://lk.example",
+      livekitApiUrl: "https://lk.example",
+      livekitApiKey: "lk-key-for-tests",
+      livekitApiSecret: "lk-secret-for-tests-0123456789abcdef",
+      hubUrl: "https://hub.example/",
+      membershipToken: "membership-token-for-tests",
+    });
+    expect(
+      loadConfig({ ...FULL, ...CALLS, LIVEKIT_URL: "ws://127.0.0.1:7880" })
+        .superdial?.livekitApiUrl,
+    ).toBe("http://127.0.0.1:7880");
+  });
+
+  test("LIVEKIT_API_URL overrides the derived server API", () => {
+    expect(
+      loadConfig({
+        ...FULL,
+        ...CALLS,
+        LIVEKIT_API_URL: "http://livekit:7880",
+      }).superdial?.livekitApiUrl,
+    ).toBe("http://livekit:7880");
+  });
+
+  test("some set: every missing one is named, and the service stops", () => {
+    expect(
+      problems({
+        ...FULL,
+        LIVEKIT_URL: CALLS.LIVEKIT_URL,
+        SUPERDIAL_HUB_URL: CALLS.SUPERDIAL_HUB_URL,
+      }),
+    ).toEqual([
+      "LIVEKIT_API_KEY is not set, and the superdial token service needs it",
+      "LIVEKIT_API_SECRET is not set, and the superdial token service needs it",
+      "SUPERDIAL_MEMBERSHIP_TOKEN is not set, and the superdial token service needs it",
+    ]);
+    // LIVEKIT_API_URL alone turns nothing on, but is not ignored either.
+    expect(
+      problems({ ...FULL, LIVEKIT_API_URL: "http://livekit:7880" }),
+    ).toEqual([
+      "LIVEKIT_URL is not set, and the superdial token service needs it",
+      "LIVEKIT_API_KEY is not set, and the superdial token service needs it",
+      "LIVEKIT_API_SECRET is not set, and the superdial token service needs it",
+      "SUPERDIAL_HUB_URL is not set, and the superdial token service needs it",
+      "SUPERDIAL_MEMBERSHIP_TOKEN is not set, and the superdial token service needs it",
+    ]);
+  });
+
+  test("URLs of the wrong kind are refused, and no value is quoted", () => {
+    const found = problems({
+      ...FULL,
+      ...CALLS,
+      LIVEKIT_URL: "https://lk.example/secret-path",
+      LIVEKIT_API_URL: "wss://lk.example/secret-path",
+      SUPERDIAL_HUB_URL: "ftp://hub.example/secret-path",
+    });
+    expect(found).toEqual([
+      "LIVEKIT_URL is not a ws(s) URL",
+      "LIVEKIT_API_URL is not an http(s) URL",
+      "SUPERDIAL_HUB_URL is not an http(s) URL",
+    ]);
+    expect(found.join(" ")).not.toContain("secret-path");
   });
 });

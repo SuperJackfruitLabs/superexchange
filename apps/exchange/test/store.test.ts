@@ -738,8 +738,7 @@ describe("migration 9: link hints", () => {
     db.close();
     const store = openStore(dir);
     cleanups.push(() => store.close());
-    expect(MIGRATIONS).toHaveLength(9);
-    expect(store.schemaVersion()).toBe(9);
+    expect(store.schemaVersion()).toBe(MIGRATIONS.length);
     expect(store.followupDelivery("g1")?.boardId).toBe("brd_a");
     expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(true);
   });
@@ -753,5 +752,86 @@ describe("migration 9: link hints", () => {
     expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-13")).toBe(true);
     // The 12th's rows went when the 13th was claimed: a day only ever moves forward.
     expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(true);
+  });
+});
+
+describe("migration 10: delayed leaves (superdial)", () => {
+  const leave = {
+    livekitRoom: "lk_a",
+    identity: "@u:x:DEV",
+    userId: "@u:x",
+    roomId: "!r:x",
+    delayId: "syd_1",
+  };
+
+  test("a database at version 9 takes them, and keeps what it had", () => {
+    const dir = mkdtempSync(join(tmpdir(), "superexchange-test-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const db = new Database(join(dir, DATABASE_FILE), { create: true });
+    migrate(db, MIGRATIONS.slice(0, 9));
+    db.exec(
+      "INSERT INTO link_hints (sender, room_id, day) VALUES ('@a:x', '!r:x', '2026-11-12')",
+    );
+    db.close();
+    const store = openStore(dir);
+    cleanups.push(() => store.close());
+    expect(MIGRATIONS).toHaveLength(10);
+    expect(store.schemaVersion()).toBe(10);
+    expect(store.claimLinkHint("@a:x", "!r:x", "2026-11-12")).toBe(false);
+    expect(store.delayedLeaves()).toEqual([]);
+  });
+
+  test("recorded, replaced for the same room and identity, marked, forgotten by its delay only", () => {
+    let t = Date.parse("2026-11-27T00:00:00.000Z");
+    const { store } = fresh(() => new Date((t += 1000)));
+    const first = store.recordDelayedLeave(leave);
+    expect(first).toEqual({
+      ...leave,
+      registeredAt: "2026-11-27T00:00:01.000Z",
+      connectedAt: null,
+    });
+    store.recordDelayedLeave({
+      ...leave,
+      identity: "@v:x:DEV2",
+      userId: "@v:x",
+    });
+    expect(store.markDelayedLeaveConnected("lk_a", "@u:x:DEV", "syd_1")).toBe(
+      true,
+    );
+    expect(store.delayedLeaves()[0]?.connectedAt).toBe(
+      "2026-11-27T00:00:03.000Z",
+    );
+
+    // The same identity in the same room again: the new delay replaces the old, not yet connected.
+    const again = store.recordDelayedLeave({ ...leave, delayId: "syd_2" });
+    expect(again).toEqual({
+      ...leave,
+      delayId: "syd_2",
+      registeredAt: "2026-11-27T00:00:04.000Z",
+      connectedAt: null,
+    });
+    expect(store.delayedLeaves().map((l) => [l.identity, l.delayId])).toEqual([
+      ["@v:x:DEV2", "syd_1"],
+      ["@u:x:DEV", "syd_2"],
+    ]);
+
+    // An action on the old delay touches nothing.
+    expect(store.markDelayedLeaveConnected("lk_a", "@u:x:DEV", "syd_1")).toBe(
+      false,
+    );
+    expect(store.forgetDelayedLeave("lk_a", "@u:x:DEV", "syd_1")).toBe(false);
+    expect(store.delayedLeaves()).toHaveLength(2);
+    expect(store.forgetDelayedLeave("lk_a", "@u:x:DEV", "syd_2")).toBe(true);
+    expect(store.forgetDelayedLeave("lk_a", "@u:x:DEV", "syd_2")).toBe(false);
+    expect(store.delayedLeaves().map((l) => l.identity)).toEqual(["@v:x:DEV2"]);
+  });
+
+  test("they survive a restart", () => {
+    const { dir, store } = fresh();
+    store.recordDelayedLeave(leave);
+    store.close();
+    const again = openStore(dir);
+    cleanups.push(() => again.close());
+    expect(again.delayedLeaves().map((l) => l.delayId)).toEqual(["syd_1"]);
   });
 });

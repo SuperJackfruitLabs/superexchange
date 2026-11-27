@@ -18,6 +18,7 @@ export const LAYERS = [
   "store",
   "appservice",
   "board-chat",
+  "calls",
   "routes",
   "main",
 ] as const;
@@ -28,9 +29,10 @@ const SRC = join(import.meta.dir, "..", "src");
  * Neighbours in LAYERS with no import between them, as 'upper>lower'. Every other layer imports
  * the one just below it, so the order is read from the code rather than chosen: swapping two
  * layers would turn a real import into an upward one. `store` knows no settings, so nothing
- * orders it above `config`.
+ * orders it above `config`; `calls` (superdial's token service) knows no board, so nothing orders
+ * it above `board-chat`: it sits beside it, below the routes that serve both.
  */
-export const UNJOINED_NEIGHBOURS = ["store>config"];
+export const UNJOINED_NEIGHBOURS = ["store>config", "calls>board-chat"];
 
 /** Lines a source file under src/ may have. */
 export const SIZE_LIMIT = 1000;

@@ -223,6 +223,20 @@ export const MIGRATIONS: readonly string[] = [
      day TEXT NOT NULL,
      PRIMARY KEY (sender, room_id, day)
    );`,
+  // 10. superdial: a call client's delayed leave (MSC4140), kept by LiveKit room and identity so
+  // the token service restarts it while LiveKit has the identity connected, and sends it when it
+  // leaves, across a restart of this service. The delay id is its holder's authority over that
+  // one event: it is kept here and nowhere else.
+  `CREATE TABLE delayed_leaves (
+     livekit_room TEXT NOT NULL,
+     identity TEXT NOT NULL,
+     user_id TEXT NOT NULL,
+     room_id TEXT NOT NULL,
+     delay_id TEXT NOT NULL,
+     registered_at TEXT NOT NULL,
+     connected_at TEXT,
+     PRIMARY KEY (livekit_room, identity)
+   );`,
 ];
 
 export function userVersion(db: Database): number {

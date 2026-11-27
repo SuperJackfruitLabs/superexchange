@@ -5,6 +5,15 @@ and puts the release before it back when the checks fail.
 
 ## Unreleased
 
+- superdial's LiveKit token service (contract C5), off unless `LIVEKIT_URL`, `LIVEKIT_API_KEY`,
+  `LIVEKIT_API_SECRET`, `SUPERDIAL_HUB_URL` and `SUPERDIAL_MEMBERSHIP_TOKEN` are set.
+  `POST /v1/token` trades a Matrix OpenID token for a LiveKit token once the AgentPod hub's
+  membership check allows the call; a refusal is 403 with the hub's reason.
+  `POST /v1/delayed-leave` and `POST /v1/livekit-webhook` keep a caller's delayed leave alive
+  while LiveKit has it connected and send it when it leaves, so a client that dies leaves the
+  call. The leaves are kept in the store (schema version 10). Supported homeserver: tuwunel
+  2.0.0. Needs the hub's membership check (AgentPod) and LiveKit (estate).
+
 ## v0.0.6 — 2026-11-24
 
 - A gate cancelled on the board (its card moved by hand or archived while the review was pending)

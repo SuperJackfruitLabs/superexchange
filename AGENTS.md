@@ -11,8 +11,8 @@ its scope are `decisions/2026-11-10-superexchange-owns-the-communication-server.
 - **Nothing requires it.** No change here may make SuperPipeline, SuperMessage or AgentPod need
   this service to work.
 - **The layers hold.** `apps/exchange/test/architecture.test.ts`: config < store < appservice <
-  board-chat < routes < main. An import stays in its layer or points down. No runtime import
-  cycle, and no file under `src/` over 1,000 lines.
+  board-chat < calls < routes < main. An import stays in its layer or points down. No runtime
+  import cycle, and no file under `src/` over 1,000 lines.
 - **The ratchets only tighten.** Lint counts per rule (`scripts/lint-baseline.json`) may fall,
   never rise; lock a fall in with `bun run lint --update`. Never raise a baseline, an
   `OVERSIZE` entry or `LARGEST_CYCLE` to get a change through: fix the code.
@@ -24,8 +24,9 @@ its scope are `decisions/2026-11-10-superexchange-owns-the-communication-server.
 
 - `apps/exchange/`: the service. `src/store` is its SQLite store (`migrations.ts`, `model.ts`
   with the `Store` interface, one module per table group, composed by `index.ts`),
-  `src/appservice` the Matrix transport, `src/board-chat` the board work in chat, `src/routes`
-  the HTTP surface (relay deliveries, the operator's board API).
+  `src/appservice` the Matrix transport, `src/board-chat` the board work in chat, `src/calls`
+  superdial's LiveKit token service and its delayed-leave loop, `src/routes` the HTTP surface
+  (relay deliveries, the operator's board API, the token service's routes).
 - `deploy/staging/`: the staging deploy, run on the staging host by its forced-command key.
 - `deploy/production/`: the production deploy, run on the production host by its forced-command
   key from a `v*` tag (`release.yml`).

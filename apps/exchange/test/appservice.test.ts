@@ -413,6 +413,37 @@ describe("the client-server client", () => {
       expect(call.url.searchParams.get("user_id")).toBe(SPEAKER);
   });
 
+  test("userDevices asks keys/query as the registration's own user and answers the device ids", async () => {
+    const { c, calls } = client(() =>
+      Response.json({
+        device_keys: { "@ana:example.test": { DEV: {}, SUPERDIAL: {} } },
+        failures: {},
+      }),
+    );
+    expect(await c.userDevices("@ana:example.test")).toEqual([
+      "DEV",
+      "SUPERDIAL",
+    ]);
+    expect(calls[0]?.url.pathname).toBe("/_matrix/client/v3/keys/query");
+    expect(calls[0]?.init.method).toBe("POST");
+    expect(calls[0]?.url.searchParams.has("user_id")).toBe(false);
+    const raw = calls[0]?.init.body;
+    const sent: unknown = typeof raw === "string" ? JSON.parse(raw) : null;
+    expect(sent).toEqual({ device_keys: { "@ana:example.test": [] } });
+
+    const none = client(() => Response.json({ device_keys: {} }));
+    expect(await none.c.userDevices("@bo:example.test")).toEqual([]);
+    const down = client(() =>
+      Response.json({ errcode: "M_UNKNOWN" }, { status: 500 }),
+    );
+    expect(
+      await down.c.userDevices("@ana:example.test").then(
+        () => "answered",
+        (e: unknown) => (e instanceof MatrixClientError ? e.message : "other"),
+      ),
+    ).toBe("keys/query answered 500 M_UNKNOWN");
+  });
+
   test("sendEvent PUTs under the caller's transaction id and answers the event id", async () => {
     const { c, calls } = client(() => Response.json({ event_id: "$e1" }));
     expect(
